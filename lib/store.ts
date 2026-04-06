@@ -1,6 +1,8 @@
 import { Category, TodoItem } from "./types"
 
 const STORAGE_KEY = "todo-categories"
+const STORAGE_VERSION_KEY = "todo-categories-version"
+const CURRENT_VERSION = 2 // Bump this when data structure changes
 
 const defaultCategories: Category[] = [
   {
@@ -43,10 +45,27 @@ const defaultCategories: Category[] = [
 export function getCategories(): Category[] {
   if (typeof window === "undefined") return defaultCategories
 
+  // Check version - if outdated, clear and use fresh defaults
+  const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY)
+  if (!storedVersion || parseInt(storedVersion) < CURRENT_VERSION) {
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION.toString())
+    return defaultCategories
+  }
+
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored) {
     try {
-      return JSON.parse(stored)
+      const parsed = JSON.parse(stored) as Category[]
+      // Migrate old data: ensure all items have a type field
+      const migrated = parsed.map(cat => ({
+        ...cat,
+        items: cat.items.map(item => ({
+          ...item,
+          type: item.type || "todo", // Default old items to "todo"
+        })),
+      }))
+      return migrated
     } catch {
       return defaultCategories
     }
