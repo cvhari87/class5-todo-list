@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useCallback } from "react"
 import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare } from "lucide-react"
 import { Category, TodoItem, ItemType } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -178,7 +178,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory }: NoteDetailPro
 
         {/* Active items */}
         {incompleteItems.length > 0 && (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/50">
             {incompleteItems.map(item => (
               <NoteItemRow
                 key={item.id}
@@ -206,7 +206,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory }: NoteDetailPro
                 Completed ({completedItems.length})
               </p>
             </div>
-            <div className="divide-y divide-border opacity-60">
+            <div className="divide-y divide-border/50 opacity-60">
               {completedItems.map(item => (
                 <NoteItemRow
                   key={item.id}
@@ -361,6 +361,8 @@ function NoteItemRow({
 }: NoteItemRowProps) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(item.text)
+  const draggableRef = useRef<HTMLDivElement>(null)
+  const dragEnabled = useRef(false)
 
   const commitEdit = () => {
     if (editText.trim()) onUpdateText(editText.trim())
@@ -373,22 +375,43 @@ function NoteItemRow({
     if (e.key === "Escape") { setEditText(item.text); setEditing(false) }
   }
 
+  // Only allow drag when initiated from the grip handle
+  const handleGripMouseDown = useCallback(() => {
+    dragEnabled.current = true
+    if (draggableRef.current) draggableRef.current.draggable = true
+  }, [])
+
+  const handleDragStartGuarded = useCallback(() => {
+    if (!dragEnabled.current) return
+    onDragStart()
+  }, [onDragStart])
+
+  const handleDragEndGuarded = useCallback(() => {
+    dragEnabled.current = false
+    if (draggableRef.current) draggableRef.current.draggable = false
+    onDragEnd()
+  }, [onDragEnd])
+
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
+      ref={draggableRef}
+      draggable={false}
+      onDragStart={handleDragStartGuarded}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onDragEnd={onDragEnd}
+      onDragEnd={handleDragEndGuarded}
       className={cn(
-        "flex items-center gap-3 px-4 py-3 bg-card transition-colors group",
+        "flex items-center gap-2 px-2 py-2.5 bg-card transition-colors group",
         isDragOver && "border-t-2 border-primary bg-primary/5",
-        item.type !== "header" && "hover:bg-secondary/50"
       )}
     >
-      {/* Drag handle */}
-      <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0">
-        <GripVertical className="w-4 h-4 text-muted-foreground" />
+      {/* Drag handle — always visible, initiates drag */}
+      <div
+        onMouseDown={handleGripMouseDown}
+        className="cursor-grab active:cursor-grabbing flex-shrink-0 p-1 rounded text-muted-foreground/40 hover:text-muted-foreground/80 hover:bg-secondary/60 transition-colors"
+        title="Drag to reorder"
+      >
+        <GripVertical className="w-4 h-4" />
       </div>
 
       {/* Left indicator */}
@@ -406,7 +429,7 @@ function NoteItemRow({
           <div className="w-1 h-4 rounded-full" style={{ backgroundColor: categoryColor }} />
         )}
         {item.type === "text" && (
-          <AlignLeft className="w-3.5 h-3.5 text-muted-foreground/40" />
+          <AlignLeft className="w-3.5 h-3.5 text-muted-foreground/30" />
         )}
       </div>
 
@@ -442,47 +465,34 @@ function NoteItemRow({
         )}
       </div>
 
-      {/* Actions — only show on hover for todo items */}
-      {item.type === "todo" && (
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Right actions */}
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        {item.type === "todo" && (
           <Button
             variant="ghost"
             size="icon"
             onClick={onToggleFlag}
             className={cn(
-              "h-8 w-8 rounded-full",
-              item.flagged && "text-accent-foreground bg-accent/30"
+              "h-8 w-8 rounded-full transition-colors",
+              item.flagged
+                ? "text-accent-foreground opacity-100"
+                : "text-muted-foreground/30 hover:text-muted-foreground opacity-0 group-hover:opacity-100"
             )}
+            title={item.flagged ? "Unflag" : "Flag"}
           >
-            <Flag className="w-4 h-4" />
+            <Flag className={cn("w-4 h-4", item.flagged && "fill-current")} />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onDelete}
-            className="h-8 w-8 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* Always-visible flag indicator when not hovering */}
-      {item.type === "todo" && item.flagged && (
-        <Flag className="w-4 h-4 text-accent-foreground flex-shrink-0 group-hover:hidden" />
-      )}
-
-      {/* Delete for header/text on hover */}
-      {(item.type === "header" || item.type === "text") && (
+        )}
         <Button
           variant="ghost"
           size="icon"
           onClick={onDelete}
-          className="h-8 w-8 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="h-8 w-8 rounded-full text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
+          title="Delete"
         >
           <Trash2 className="w-4 h-4" />
         </Button>
-      )}
+      </div>
     </div>
   )
 }
