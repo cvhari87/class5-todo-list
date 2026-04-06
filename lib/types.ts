@@ -1,6 +1,9 @@
+export type ItemType = "todo" | "header" | "text"
+
 export interface TodoItem {
   id: string
   text: string
+  type: ItemType
   completed: boolean
   flagged: boolean
   createdAt: Date

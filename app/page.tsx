@@ -1,14 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Flag, List, ChevronLeft, ChevronRight } from "lucide-react"
+import { Flag, List } from "lucide-react"
 import { Category } from "@/lib/types"
 import { getCategories, saveCategories, getFlaggedItems } from "@/lib/store"
 import { FlaggedList } from "@/components/flagged-list"
 import { CategoryCard } from "@/components/category-card"
 import { NoteDetail } from "@/components/note-detail"
 import { CategoryManager } from "@/components/category-manager"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 type View = "flagged" | "categories" | "detail"
@@ -75,19 +74,6 @@ export default function TodoApp() {
     })
   }
 
-  const cycleView = (direction: "prev" | "next") => {
-    const views: View[] = ["flagged", "categories"]
-    const currentIndex = views.indexOf(currentView as "flagged" | "categories")
-    
-    if (direction === "next") {
-      const nextIndex = (currentIndex + 1) % views.length
-      setCurrentView(views[nextIndex])
-    } else {
-      const prevIndex = (currentIndex - 1 + views.length) % views.length
-      setCurrentView(views[prevIndex])
-    }
-  }
-
   const flaggedItems = getFlaggedItems(categories)
   const selectedCategory = categories.find(cat => cat.id === selectedCategoryId)
 
@@ -119,57 +105,39 @@ export default function TodoApp() {
               </div>
 
               {/* View Toggle */}
-              <div className="flex items-center justify-between bg-card rounded-xl p-1 shadow-sm">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => cycleView("prev")}
-                  className="h-8 w-8 rounded-lg"
+              <div className="flex items-center gap-1 bg-card rounded-xl p-1 shadow-sm self-start">
+                <button
+                  onClick={() => setCurrentView("flagged")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg transition-all",
+                    currentView === "flagged"
+                      ? "bg-accent/30 text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => setCurrentView("flagged")}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2 rounded-lg transition-all",
-                      currentView === "flagged"
-                        ? "bg-accent/30 text-accent-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <Flag className="w-4 h-4" />
-                    <span className="text-sm font-medium">Flagged</span>
-                    {flaggedItems.length > 0 && (
-                      <span className="text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-full font-medium">
-                        {flaggedItems.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setCurrentView("categories")}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2 rounded-lg transition-all",
-                      currentView === "categories"
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <List className="w-4 h-4" />
-                    <span className="text-sm font-medium">All</span>
-                    <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full font-medium">
-                      {categories.length}
+                  <Flag className="w-4 h-4" />
+                  <span className="text-sm font-medium">Flagged</span>
+                  {flaggedItems.length > 0 && (
+                    <span className="text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-full font-medium">
+                      {flaggedItems.length}
                     </span>
-                  </button>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => cycleView("next")}
-                  className="h-8 w-8 rounded-lg"
+                  )}
+                </button>
+                <button
+                  onClick={() => setCurrentView("categories")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg transition-all",
+                    currentView === "categories"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
+                  <List className="w-4 h-4" />
+                  <span className="text-sm font-medium">Notes</span>
+                  <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full font-medium">
+                    {categories.length}
+                  </span>
+                </button>
               </div>
             </header>
 

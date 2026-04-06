@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { ArrowLeft, Plus, Flag, Trash2 } from "lucide-react"
-import { Category, TodoItem } from "@/lib/types"
+import { useState, useRef } from "react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare } from "lucide-react"
+import { Category, TodoItem, ItemType } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,53 +16,112 @@ interface NoteDetailProps {
 }
 
 export function NoteDetail({ category, onBack, onUpdateCategory }: NoteDetailProps) {
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [addingType, setAddingType] = useState<ItemType | null>(null)
   const [newItemText, setNewItemText] = useState("")
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const dragItemId = useRef<string | null>(null)
 
-  const handleToggleComplete = (itemId: string) => {
-    const updatedItems = category.items.map(item =>
-      item.id === itemId ? { ...item, completed: !item.completed } : item
-    )
-    onUpdateCategory({ ...category, items: updatedItems })
+  const startAdding = (type: ItemType) => {
+    setAddingType(type)
+    setNewItemText("")
+    setAddMenuOpen(false)
   }
 
-  const handleToggleFlag = (itemId: string) => {
-    const updatedItems = category.items.map(item =>
-      item.id === itemId ? { ...item, flagged: !item.flagged } : item
-    )
-    onUpdateCategory({ ...category, items: updatedItems })
-  }
-
-  const handleDeleteItem = (itemId: string) => {
-    const updatedItems = category.items.filter(item => item.id !== itemId)
-    onUpdateCategory({ ...category, items: updatedItems })
-  }
-
-  const handleAddItem = () => {
-    if (!newItemText.trim()) return
-    
+  const commitNewItem = () => {
+    if (!addingType || !newItemText.trim()) {
+      setAddingType(null)
+      return
+    }
     const newItem: TodoItem = {
       id: generateId(),
       text: newItemText.trim(),
+      type: addingType,
       completed: false,
       flagged: false,
       createdAt: new Date(),
     }
-    
     onUpdateCategory({ ...category, items: [...category.items, newItem] })
     setNewItemText("")
+    setAddingType(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleAddItem()
-    }
+    if (e.key === "Enter") commitNewItem()
+    if (e.key === "Escape") { setAddingType(null); setNewItemText("") }
   }
 
-  const incompleteItems = category.items.filter(item => !item.completed)
-  const completedItems = category.items.filter(item => item.completed)
+  const handleToggleComplete = (itemId: string) => {
+    onUpdateCategory({
+      ...category,
+      items: category.items.map(item =>
+        item.id === itemId ? { ...item, completed: !item.completed } : item
+      ),
+    })
+  }
+
+  const handleToggleFlag = (itemId: string) => {
+    onUpdateCategory({
+      ...category,
+      items: category.items.map(item =>
+        item.id === itemId ? { ...item, flagged: !item.flagged } : item
+      ),
+    })
+  }
+
+  const handleDeleteItem = (itemId: string) => {
+    onUpdateCategory({
+      ...category,
+      items: category.items.filter(item => item.id !== itemId),
+    })
+  }
+
+  const handleUpdateText = (itemId: string, text: string) => {
+    onUpdateCategory({
+      ...category,
+      items: category.items.map(item =>
+        item.id === itemId ? { ...item, text } : item
+      ),
+    })
+  }
+
+  // Drag and drop handlers
+  const handleDragStart = (id: string) => {
+    dragItemId.current = id
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    setDragOverId(id)
+  }
+
+  const handleDrop = (targetId: string) => {
+    const sourceId = dragItemId.current
+    if (!sourceId || sourceId === targetId) {
+      setDragOverId(null)
+      dragItemId.current = null
+      return
+    }
+    const items = [...category.items]
+    const fromIndex = items.findIndex(i => i.id === sourceId)
+    const toIndex = items.findIndex(i => i.id === targetId)
+    const [moved] = items.splice(fromIndex, 1)
+    items.splice(toIndex, 0, moved)
+    onUpdateCategory({ ...category, items })
+    setDragOverId(null)
+    dragItemId.current = null
+  }
+
+  const handleDragEnd = () => {
+    setDragOverId(null)
+    dragItemId.current = null
+  }
+
+  const incompleteItems = category.items.filter(item => item.type !== "todo" || !item.completed)
+  const completedItems = category.items.filter(item => item.type === "todo" && item.completed)
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-screen">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
         <Button
@@ -74,57 +133,40 @@ export function NoteDetail({ category, onBack, onUpdateCategory }: NoteDetailPro
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div className="flex items-center gap-2 flex-1">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: category.color }}
-          />
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: category.color }} />
           <h1 className="text-lg font-semibold">{category.name}</h1>
         </div>
         <span className="text-sm text-muted-foreground">
-          {category.items.filter(i => !i.completed).length} remaining
+          {category.items.filter(i => i.type === "todo" && !i.completed).length} remaining
         </span>
       </div>
 
       {/* Items List */}
       <div className="flex-1 overflow-auto">
-        {/* Add new item */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
-          <div className="w-5 h-5 rounded-full border-2 border-dashed border-muted-foreground/30" />
-          <Input
-            placeholder="Add a new item..."
-            value={newItemText}
-            onChange={(e) => setNewItemText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 border-0 bg-transparent p-0 h-auto text-sm focus-visible:ring-0 placeholder:text-muted-foreground/50"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleAddItem}
-            disabled={!newItemText.trim()}
-            className="h-8 w-8 rounded-full"
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
 
-        {/* Incomplete items */}
+        {/* Active items */}
         {incompleteItems.length > 0 && (
           <div className="divide-y divide-border">
             {incompleteItems.map(item => (
-              <TodoItemRow
+              <NoteItemRow
                 key={item.id}
                 item={item}
                 categoryColor={category.color}
+                isDragOver={dragOverId === item.id}
                 onToggleComplete={() => handleToggleComplete(item.id)}
                 onToggleFlag={() => handleToggleFlag(item.id)}
                 onDelete={() => handleDeleteItem(item.id)}
+                onUpdateText={(text) => handleUpdateText(item.id, text)}
+                onDragStart={() => handleDragStart(item.id)}
+                onDragOver={(e) => handleDragOver(e, item.id)}
+                onDrop={() => handleDrop(item.id)}
+                onDragEnd={handleDragEnd}
               />
             ))}
           </div>
         )}
 
-        {/* Completed items */}
+        {/* Completed todo items */}
         {completedItems.length > 0 && (
           <div className="mt-6">
             <div className="px-4 py-2">
@@ -134,79 +176,280 @@ export function NoteDetail({ category, onBack, onUpdateCategory }: NoteDetailPro
             </div>
             <div className="divide-y divide-border opacity-60">
               {completedItems.map(item => (
-                <TodoItemRow
+                <NoteItemRow
                   key={item.id}
                   item={item}
                   categoryColor={category.color}
+                  isDragOver={dragOverId === item.id}
                   onToggleComplete={() => handleToggleComplete(item.id)}
                   onToggleFlag={() => handleToggleFlag(item.id)}
                   onDelete={() => handleDeleteItem(item.id)}
+                  onUpdateText={(text) => handleUpdateText(item.id, text)}
+                  onDragStart={() => handleDragStart(item.id)}
+                  onDragOver={(e) => handleDragOver(e, item.id)}
+                  onDrop={() => handleDrop(item.id)}
+                  onDragEnd={handleDragEnd}
                 />
               ))}
             </div>
           </div>
         )}
 
-        {category.items.length === 0 && (
+        {category.items.length === 0 && !addingType && (
           <div className="flex flex-col items-center justify-center py-16 px-4">
-            <p className="text-muted-foreground text-center">No items yet</p>
+            <p className="text-muted-foreground text-center">This note is empty</p>
             <p className="text-sm text-muted-foreground/70 text-center mt-1">
-              Add your first item above
+              Tap + to add a header, text, or todo item
             </p>
           </div>
         )}
+
+        {/* Inline new item input */}
+        {addingType && (
+          <div className="flex items-center gap-3 px-4 py-3 border-t border-border bg-card animate-in fade-in slide-in-from-bottom-1">
+            <div className="w-5 flex items-center justify-center text-muted-foreground">
+              {addingType === "header" && <Heading className="w-4 h-4" />}
+              {addingType === "text" && <AlignLeft className="w-4 h-4" />}
+              {addingType === "todo" && <CheckSquare className="w-4 h-4" />}
+            </div>
+            <Input
+              autoFocus
+              placeholder={
+                addingType === "header"
+                  ? "Header text..."
+                  : addingType === "text"
+                  ? "Note text..."
+                  : "Todo item..."
+              }
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className={cn(
+                "flex-1 border-0 bg-transparent p-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/50",
+                addingType === "header" ? "text-base font-semibold" : "text-sm"
+              )}
+            />
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setAddingType(null); setNewItemText("") }}
+                className="h-8 px-2 text-muted-foreground"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={commitNewItem}
+                disabled={!newItemText.trim()}
+                className="h-8 px-3"
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom toolbar */}
+      <div className="sticky bottom-0 border-t border-border bg-card/90 backdrop-blur-sm px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {category.items.length} {category.items.length === 1 ? "block" : "blocks"}
+          </span>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setAddMenuOpen(prev => !prev)}
+              className="h-9 w-9 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="w-5 h-5" />
+            </Button>
+
+            {/* Add menu popover */}
+            {addMenuOpen && (
+              <div className="absolute bottom-12 right-0 bg-card rounded-xl shadow-lg border border-border overflow-hidden w-44 animate-in fade-in slide-in-from-bottom-2">
+                <button
+                  onClick={() => startAdding("header")}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-secondary/50 transition-colors border-b border-border"
+                >
+                  <Heading className="w-4 h-4 text-muted-foreground" />
+                  <span>Header</span>
+                </button>
+                <button
+                  onClick={() => startAdding("text")}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-secondary/50 transition-colors border-b border-border"
+                >
+                  <AlignLeft className="w-4 h-4 text-muted-foreground" />
+                  <span>Text</span>
+                </button>
+                <button
+                  onClick={() => startAdding("todo")}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-secondary/50 transition-colors"
+                >
+                  <CheckSquare className="w-4 h-4 text-muted-foreground" />
+                  <span>Todo</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-interface TodoItemRowProps {
+interface NoteItemRowProps {
   item: TodoItem
   categoryColor: string
+  isDragOver: boolean
   onToggleComplete: () => void
   onToggleFlag: () => void
   onDelete: () => void
+  onUpdateText: (text: string) => void
+  onDragStart: () => void
+  onDragOver: (e: React.DragEvent) => void
+  onDrop: () => void
+  onDragEnd: () => void
 }
 
-function TodoItemRow({ item, categoryColor, onToggleComplete, onToggleFlag, onDelete }: TodoItemRowProps) {
+function NoteItemRow({
+  item,
+  categoryColor,
+  isDragOver,
+  onToggleComplete,
+  onToggleFlag,
+  onDelete,
+  onUpdateText,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: NoteItemRowProps) {
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState(item.text)
+
+  const commitEdit = () => {
+    if (editText.trim()) onUpdateText(editText.trim())
+    else setEditText(item.text)
+    setEditing(false)
+  }
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") commitEdit()
+    if (e.key === "Escape") { setEditText(item.text); setEditing(false) }
+  }
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-card hover:bg-secondary/50 transition-colors group">
-      <div onClick={onToggleComplete} className="cursor-pointer">
-        <Checkbox
-          checked={item.completed}
-          className="h-5 w-5 rounded-full border-2"
-          style={{ borderColor: categoryColor }}
-        />
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "flex items-center gap-3 px-4 py-3 bg-card transition-colors group",
+        isDragOver && "border-t-2 border-primary bg-primary/5",
+        item.type !== "header" && "hover:bg-secondary/50"
+      )}
+    >
+      {/* Drag handle */}
+      <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-40 transition-opacity flex-shrink-0">
+        <GripVertical className="w-4 h-4 text-muted-foreground" />
       </div>
-      <p className={cn(
-        "flex-1 text-sm",
-        item.completed && "line-through text-muted-foreground"
-      )}>
-        {item.text}
-      </p>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleFlag}
-          className={cn(
-            "h-8 w-8 rounded-full",
-            item.flagged && "text-accent-foreground bg-accent/30"
-          )}
-        >
-          <Flag className="w-4 h-4" />
-        </Button>
+
+      {/* Left indicator */}
+      <div className="flex-shrink-0 flex items-center justify-center w-5">
+        {item.type === "todo" && (
+          <div onClick={onToggleComplete} className="cursor-pointer">
+            <Checkbox
+              checked={item.completed}
+              className="h-5 w-5 rounded-full border-2"
+              style={{ borderColor: categoryColor }}
+            />
+          </div>
+        )}
+        {item.type === "header" && (
+          <div className="w-1 h-4 rounded-full" style={{ backgroundColor: categoryColor }} />
+        )}
+        {item.type === "text" && (
+          <AlignLeft className="w-3.5 h-3.5 text-muted-foreground/40" />
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        {editing ? (
+          <Input
+            autoFocus
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={handleEditKeyDown}
+            className={cn(
+              "border-0 bg-transparent p-0 h-auto focus-visible:ring-0",
+              item.type === "header" && "text-base font-semibold",
+              item.type === "text" && "text-sm text-muted-foreground",
+              item.type === "todo" && "text-sm",
+            )}
+          />
+        ) : (
+          <p
+            onDoubleClick={() => { setEditText(item.text); setEditing(true) }}
+            className={cn(
+              "cursor-default select-none",
+              item.type === "header" && "text-base font-semibold tracking-tight",
+              item.type === "text" && "text-sm text-muted-foreground leading-relaxed",
+              item.type === "todo" && "text-sm",
+              item.type === "todo" && item.completed && "line-through text-muted-foreground",
+            )}
+          >
+            {item.text}
+          </p>
+        )}
+      </div>
+
+      {/* Actions — only show on hover for todo items */}
+      {item.type === "todo" && (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleFlag}
+            className={cn(
+              "h-8 w-8 rounded-full",
+              item.flagged && "text-accent-foreground bg-accent/30"
+            )}
+          >
+            <Flag className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            className="h-8 w-8 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Always-visible flag indicator when not hovering */}
+      {item.type === "todo" && item.flagged && (
+        <Flag className="w-4 h-4 text-accent-foreground flex-shrink-0 group-hover:hidden" />
+      )}
+
+      {/* Delete for header/text on hover */}
+      {(item.type === "header" || item.type === "text") && (
         <Button
           variant="ghost"
           size="icon"
           onClick={onDelete}
-          className="h-8 w-8 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10"
+          className="h-8 w-8 rounded-full text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
         >
           <Trash2 className="w-4 h-4" />
         </Button>
-      </div>
-      {item.flagged && (
-        <Flag className="w-4 h-4 text-accent-foreground flex-shrink-0 group-hover:hidden" />
       )}
     </div>
   )
