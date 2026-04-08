@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { Flag, List, Moon, Sun, Search, X } from "lucide-react"
+import { Flag, List, Moon, Sun, Search, X, GripVertical } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import { Category } from "@/lib/types"
@@ -12,6 +12,7 @@ import { CategoryCard } from "@/components/category-card"
 import { NoteDetail } from "@/components/note-detail"
 import { CategoryManager } from "@/components/category-manager"
 import { cn } from "@/lib/utils"
+import { haptics } from "@/lib/haptics"
 
 type View = "flagged" | "categories" | "detail"
 
@@ -33,6 +34,15 @@ export default function TodoApp() {
   const [showSearch, setShowSearch] = useState(false)
   const { theme, setTheme } = useTheme()
 
+  // Drag-to-reorder state
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const draggingIdRef = useRef<string | null>(null)
+  const dragOverIdRef = useRef<string | null>(null)
+  const categoriesRef = useRef<Category[]>([])
+
+  useEffect(() => { categoriesRef.current = categories }, [categories])
+
   useEffect(() => {
     setCategories(getCategories())
     setMounted(true)
@@ -48,6 +58,57 @@ export default function TodoApp() {
       saveCategories(categories)
     }
   }, [categories, mounted])
+
+  // Global pointer listeners for drag reorder — active only while dragging
+  useEffect(() => {
+    if (!draggingId) return
+
+    const onPointerMove = (e: PointerEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const row = el?.closest("[data-cat-id]") as HTMLElement | null
+      const targetId = row?.dataset.catId
+      if (targetId && targetId !== draggingIdRef.current) {
+        dragOverIdRef.current = targetId
+        setDragOverId(targetId)
+      }
+    }
+
+    const onPointerUp = () => {
+      const from = draggingIdRef.current
+      const to = dragOverIdRef.current
+      if (from && to && from !== to) {
+        haptics.light()
+        setCategories(prev => {
+          const sorted = [...prev].sort((a, b) => a.priority - b.priority)
+          const fromIdx = sorted.findIndex(c => c.id === from)
+          const toIdx = sorted.findIndex(c => c.id === to)
+          if (fromIdx === -1 || toIdx === -1) return prev
+          const [moved] = sorted.splice(fromIdx, 1)
+          sorted.splice(toIdx, 0, moved)
+          return sorted.map((cat, i) => ({ ...cat, priority: i + 1 }))
+        })
+      }
+      draggingIdRef.current = null
+      dragOverIdRef.current = null
+      setDraggingId(null)
+      setDragOverId(null)
+    }
+
+    document.addEventListener("pointermove", onPointerMove)
+    document.addEventListener("pointerup", onPointerUp)
+    return () => {
+      document.removeEventListener("pointermove", onPointerMove)
+      document.removeEventListener("pointerup", onPointerUp)
+    }
+  }, [draggingId])
+
+  const handleDragStart = (categoryId: string) => {
+    haptics.medium()
+    draggingIdRef.current = categoryId
+    dragOverIdRef.current = null
+    setDraggingId(categoryId)
+    setDragOverId(null)
+  }
 
   const handleToggleComplete = (categoryId: string, itemId: string) => {
     setCategories(prev =>
@@ -95,17 +156,6 @@ export default function TodoApp() {
         label: "Undo",
         onClick: () => setCategories(prev => [...prev, deleted]),
       },
-    })
-  }
-
-  const handleMoveCategory = (index: number, direction: "up" | "down") => {
-    setCategories(prev => {
-      const sorted = [...prev].sort((a, b) => a.priority - b.priority)
-      const newIndex = direction === "up" ? index - 1 : index + 1
-      if (newIndex < 0 || newIndex >= sorted.length) return prev
-      const [moved] = sorted.splice(index, 1)
-      sorted.splice(newIndex, 0, moved)
-      return sorted.map((cat, i) => ({ ...cat, priority: i + 1 }))
     })
   }
 
@@ -230,28 +280,33 @@ export default function TodoApp() {
                 <div className="flex flex-col gap-3">
                   {filteredCategories
                     .sort((a, b) => a.priority - b.priority)
-                    .map((category, index, arr) => (
-                      <div key={category.id} className="flex items-center gap-2">
-                        <div className="flex flex-col gap-0.5">
-                          <button
-                            onClick={() => handleMoveCategory(index, "up")}
-                            disabled={index === 0}
-                            className="p-1 text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
-                          </button>
-                          <button
-                            onClick={() => handleMoveCategory(index, "down")}
-                            disabled={index === arr.length - 1}
-                            className="p-1 text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                          </button>
+                    .map((category) => (
+                      <div
+                        key={category.id}
+                        data-cat-id={category.id}
+                        className={cn(
+                          "flex items-center gap-2 transition-all",
+                          draggingId === category.id && "opacity-40 scale-[0.98]",
+                          dragOverId === category.id && draggingId !== category.id && "border-t-2 border-primary pt-1"
+                        )}
+                      >
+                        {/* Drag handle */}
+                        <div
+                          className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none p-2 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
+                          onPointerDown={(e) => {
+                            e.preventDefault()
+                            handleDragStart(category.id)
+                          }}
+                        >
+                          <GripVertical className="w-5 h-5" />
                         </div>
                         <div className="flex-1">
                           <CategoryCard
                             category={category}
-                            onClick={() => handleSelectCategory(category.id)}
+                            onClick={() => {
+                              // Only navigate if not dragging
+                              if (!draggingId) handleSelectCategory(category.id)
+                            }}
                           />
                         </div>
                       </div>
