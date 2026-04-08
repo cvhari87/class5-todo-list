@@ -1,14 +1,14 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { Category, TodoItem, ItemType } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { generateId } from "@/lib/store"
+import { generateId, todayString } from "@/lib/store"
 import { haptics } from "@/lib/haptics"
 
 const PRESET_COLORS = [
@@ -128,12 +128,26 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
 
   const handleToggleComplete = (itemId: string) => {
     const item = category.items.find(i => i.id === itemId)
-    // Haptic: success when completing, light when uncompleting
     if (item) item.completed ? haptics.light() : haptics.success()
+    const today = todayString()
     onUpdateCategory({
       ...category,
       items: category.items.map(i =>
-        i.id === itemId ? { ...i, completed: !i.completed } : i
+        i.id === itemId
+          ? { ...i, completed: !i.completed, lastCompletedDate: !i.completed ? today : i.lastCompletedDate }
+          : i
+      ),
+    })
+  }
+
+  const handleToggleRecurring = (itemId: string) => {
+    haptics.medium()
+    onUpdateCategory({
+      ...category,
+      items: category.items.map(item =>
+        item.id === itemId
+          ? { ...item, recurring: !item.recurring, flagged: item.recurring ? item.flagged : false }
+          : item
       ),
     })
   }
@@ -232,6 +246,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
         isDragOver={dragOverId === item.id}
         onToggleComplete={() => handleToggleComplete(item.id)}
         onToggleFlag={() => handleToggleFlag(item.id)}
+        onToggleRecurring={() => handleToggleRecurring(item.id)}
         onDelete={() => handleDeleteItem(item.id)}
         onUpdateText={(text) => handleUpdateText(item.id, text)}
         onUpdateDueDate={(date) => handleUpdateDueDate(item.id, date)}
@@ -407,6 +422,7 @@ interface NoteItemRowProps {
   isDragOver: boolean
   onToggleComplete: () => void
   onToggleFlag: () => void
+  onToggleRecurring: () => void
   onDelete: () => void
   onUpdateText: (text: string) => void
   onUpdateDueDate: (date: string) => void
@@ -415,7 +431,7 @@ interface NoteItemRowProps {
 
 function NoteItemRow({
   item, categoryColor, isDragging, isDragOver,
-  onToggleComplete, onToggleFlag, onDelete,
+  onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
   onUpdateText, onUpdateDueDate, onDragStart,
 }: NoteItemRowProps) {
   const [editing, setEditing] = useState(false)
@@ -573,12 +589,26 @@ function NoteItemRow({
         {/* Right actions */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
           {item.type === "todo" && (
-            <Button variant="ghost" size="icon" onClick={onToggleFlag}
-              className={cn("h-8 w-8 rounded-full transition-colors",
-                item.flagged ? "text-accent-foreground" : "text-muted-foreground/40 hover:text-muted-foreground")}
-              title={item.flagged ? "Unflag" : "Flag"}>
-              <Flag className={cn("w-4 h-4", item.flagged && "fill-current")} />
-            </Button>
+            <>
+              {/* Recurring toggle — 🔄 icon, active = green */}
+              <Button variant="ghost" size="icon" onClick={onToggleRecurring}
+                className={cn("h-8 w-8 rounded-full transition-colors",
+                  item.recurring
+                    ? "text-green-500 hover:text-green-600"
+                    : "text-muted-foreground/40 hover:text-muted-foreground")}
+                title={item.recurring ? "Daily goal (tap to remove)" : "Make daily goal"}>
+                <RefreshCw className={cn("w-3.5 h-3.5", item.recurring && "stroke-[2.5]")} />
+              </Button>
+              {/* Flag — only show if not recurring */}
+              {!item.recurring && (
+                <Button variant="ghost" size="icon" onClick={onToggleFlag}
+                  className={cn("h-8 w-8 rounded-full transition-colors",
+                    item.flagged ? "text-accent-foreground" : "text-muted-foreground/40 hover:text-muted-foreground")}
+                  title={item.flagged ? "Unflag" : "Flag"}>
+                  <Flag className={cn("w-4 h-4", item.flagged && "fill-current")} />
+                </Button>
+              )}
+            </>
           )}
           <Button variant="ghost" size="icon" onClick={handleDelete}
             className={cn("h-8 w-8 rounded-full transition-colors",

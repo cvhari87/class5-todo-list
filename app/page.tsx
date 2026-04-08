@@ -25,7 +25,7 @@ import {
 import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers"
 import { CSS } from "@dnd-kit/utilities"
 import { Category } from "@/lib/types"
-import { getCategories, saveCategories, getFlaggedItems } from "@/lib/store"
+import { getCategories, saveCategories, getFlaggedItems, getRecurringItems } from "@/lib/store"
 import { FlaggedList } from "@/components/flagged-list"
 import { CategoryCard } from "@/components/category-card"
 import { NoteDetail } from "@/components/note-detail"
@@ -197,6 +197,7 @@ export default function TodoApp() {
   }
 
   const flaggedItems = getFlaggedItems(categories)
+  const recurringItems = getRecurringItems(categories)
   const selectedCategory = categories.find(cat => cat.id === selectedCategoryId)
 
   // Search: filter categories whose name or items match
@@ -309,6 +310,7 @@ export default function TodoApp() {
                 <div className="bg-card rounded-xl shadow-sm overflow-hidden">
                   <FlaggedList
                     flaggedItems={flaggedItems}
+                    recurringItems={recurringItems}
                     onToggleComplete={handleToggleComplete}
                     onSelectItem={handleSelectItem}
                   />

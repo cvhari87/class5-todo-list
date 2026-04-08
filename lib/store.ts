@@ -2,7 +2,11 @@ import { Category, TodoItem } from "./types"
 
 const STORAGE_KEY = "todo-categories"
 const STORAGE_VERSION_KEY = "todo-categories-version"
-const CURRENT_VERSION = 3 // Bump this when data structure changes
+const CURRENT_VERSION = 4 // Bumped: added recurring + lastCompletedDate fields
+
+export function todayString(): string {
+  return new Date().toISOString().split("T")[0] // "YYYY-MM-DD"
+}
 
 const defaultCategories: Category[] = [
   {
@@ -36,11 +40,39 @@ const defaultCategories: Category[] = [
     priority: 3,
     items: [
       { id: "h0", text: "Goals", type: "header", completed: false, flagged: false, createdAt: new Date() },
-      { id: "h1", text: "Morning run", type: "todo", completed: true, flagged: false, createdAt: new Date() },
-      { id: "h2", text: "Book dentist appointment", type: "todo", completed: false, flagged: true, createdAt: new Date() },
+      { id: "h1", text: "Exercise 20 mins", type: "todo", completed: false, flagged: false, recurring: true, createdAt: new Date() },
+      { id: "h2", text: "Drink 8 glasses of water", type: "todo", completed: false, flagged: false, recurring: true, createdAt: new Date() },
+      { id: "h3", text: "Book dentist appointment", type: "todo", completed: false, flagged: true, createdAt: new Date() },
     ],
   },
 ]
+
+/**
+ * Reset recurring items that were completed on a previous day.
+ * Called on every app load — safe to call multiple times per day.
+ */
+function resetRecurringItems(categories: Category[]): { categories: Category[]; changed: boolean } {
+  const today = todayString()
+  let changed = false
+
+  const updated = categories.map(cat => ({
+    ...cat,
+    items: cat.items.map(item => {
+      if (
+        item.type === "todo" &&
+        item.recurring &&
+        item.completed &&
+        item.lastCompletedDate !== today
+      ) {
+        changed = true
+        return { ...item, completed: false }
+      }
+      return item
+    }),
+  }))
+
+  return { categories: updated, changed }
+}
 
 export function getCategories(): Category[] {
   if (typeof window === "undefined") return defaultCategories
@@ -57,15 +89,22 @@ export function getCategories(): Category[] {
   if (stored) {
     try {
       const parsed = JSON.parse(stored) as Category[]
-      // Migrate old data: ensure all items have a type field
+      // Migrate: ensure all items have required fields
       const migrated = parsed.map(cat => ({
         ...cat,
         items: cat.items.map(item => ({
           ...item,
-          type: item.type || "todo", // Default old items to "todo"
+          type: item.type || "todo",
         })),
       }))
-      return migrated
+
+      // Auto-reset recurring items from previous days
+      const { categories, changed } = resetRecurringItems(migrated)
+      if (changed) {
+        // Save the reset state immediately
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(categories))
+      }
+      return categories
     } catch {
       return defaultCategories
     }
@@ -80,18 +119,33 @@ export function saveCategories(categories: Category[]): void {
 
 export function getFlaggedItems(categories: Category[]): { item: TodoItem; category: Category }[] {
   const flagged: { item: TodoItem; category: Category }[] = []
-
   const sortedCategories = [...categories].sort((a, b) => a.priority - b.priority)
 
   for (const category of sortedCategories) {
     for (const item of category.items) {
-      if (item.type === "todo" && item.flagged && !item.completed) {
+      // Flagged = one-time flagged items (not recurring)
+      if (item.type === "todo" && item.flagged && !item.recurring) {
         flagged.push({ item, category })
       }
     }
   }
 
   return flagged
+}
+
+export function getRecurringItems(categories: Category[]): { item: TodoItem; category: Category }[] {
+  const recurring: { item: TodoItem; category: Category }[] = []
+  const sortedCategories = [...categories].sort((a, b) => a.priority - b.priority)
+
+  for (const category of sortedCategories) {
+    for (const item of category.items) {
+      if (item.type === "todo" && item.recurring) {
+        recurring.push({ item, category })
+      }
+    }
+  }
+
+  return recurring
 }
 
 export function generateId(): string {

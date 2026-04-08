@@ -7,7 +7,9 @@ export interface TodoItem {
   completed: boolean
   flagged: boolean
   createdAt: Date
-  dueDate?: string // ISO date string YYYY-MM-DD
+  dueDate?: string           // ISO date string YYYY-MM-DD
+  recurring?: boolean        // true = resets to incomplete each new day
+  lastCompletedDate?: string // ISO date "YYYY-MM-DD" — last day it was checked off
 }
 
 export interface Category {
