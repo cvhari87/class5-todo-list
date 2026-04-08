@@ -32,8 +32,8 @@ interface FlaggedItem {
 }
 
 interface FlaggedListProps {
-  flaggedItems: FlaggedItem[]       // one-time flagged items
-  recurringItems: FlaggedItem[]     // daily goal items
+  flaggedItems: FlaggedItem[]
+  recurringItems: FlaggedItem[]
   onToggleComplete: (categoryId: string, itemId: string) => void
   onSelectItem: (categoryId: string, itemId: string) => void
 }
@@ -42,7 +42,7 @@ function itemKey(fi: FlaggedItem) {
   return `${fi.category.id}-${fi.item.id}`
 }
 
-// ─── Sortable row ────────────────────────────────────────────────────────────
+// ─── Sortable row ─────────────────────────────────────────────────────────────
 
 interface SortableRowProps {
   fi: FlaggedItem
@@ -53,20 +53,11 @@ interface SortableRowProps {
   showRecurringIcon?: boolean
 }
 
-function SortableRow({
-  fi, onToggleComplete, onSelectItem, isDragging, isOverlay, showRecurringIcon,
-}: SortableRowProps) {
+function SortableRow({ fi, onToggleComplete, onSelectItem, isDragging, isOverlay, showRecurringIcon }: SortableRowProps) {
   const key = itemKey(fi)
   const { item, category } = fi
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging: isSortableDragging,
-  } = useSortable({ id: key })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } = useSortable({ id: key })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -83,47 +74,22 @@ function SortableRow({
         isOverlay && "shadow-2xl rounded-xl border border-border opacity-95 scale-[1.03]"
       )}
     >
-      {/* Drag handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="flex-shrink-0 touch-none p-2 text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing select-none"
-      >
+      <div {...attributes} {...listeners}
+        className="flex-shrink-0 touch-none p-2 text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing select-none">
         <GripVertical className="w-4 h-4" />
       </div>
 
-      {/* Checkbox */}
-      <div
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!isDragging) {
-            haptics.success()
-            onToggleComplete(category.id, item.id)
-          }
-        }}
-      >
-        <Checkbox
-          checked={item.completed}
-          className="h-5 w-5 rounded-full border-2"
-          style={{ borderColor: category.color }}
-        />
+      <div onClick={(e) => {
+        e.stopPropagation()
+        if (!isDragging) { haptics.success(); onToggleComplete(category.id, item.id) }
+      }}>
+        <Checkbox checked={item.completed} className="h-5 w-5 rounded-full border-2" style={{ borderColor: category.color }} />
       </div>
 
-      {/* Content */}
-      <div
-        className="flex-1 min-w-0 cursor-pointer"
-        onClick={() => { if (!isDragging) onSelectItem(category.id, item.id) }}
-      >
-        <p className={cn(
-          "text-sm font-medium truncate",
-          item.completed && "line-through text-muted-foreground"
-        )}>
+      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isDragging) onSelectItem(category.id, item.id) }}>
+        <p className={cn("text-sm font-medium truncate", item.completed && "line-through text-muted-foreground")}>
           {item.text}
         </p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
-          <span className="text-xs text-muted-foreground">{category.name}</span>
-        </div>
       </div>
 
       {showRecurringIcon
@@ -135,7 +101,7 @@ function SortableRow({
   )
 }
 
-// ─── Sortable section ─────────────────────────────────────────────────────────
+// ─── Sortable section (per-category group) ────────────────────────────────────
 
 interface SortableSectionProps {
   items: FlaggedItem[]
@@ -145,9 +111,7 @@ interface SortableSectionProps {
   showRecurringIcon?: boolean
 }
 
-function SortableSection({
-  items, onReorder, onToggleComplete, onSelectItem, showRecurringIcon,
-}: SortableSectionProps) {
+function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, showRecurringIcon }: SortableSectionProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
@@ -155,11 +119,7 @@ function SortableSection({
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   )
 
-  const handleDragStart = (event: DragStartEvent) => {
-    haptics.medium()
-    setActiveId(event.active.id as string)
-  }
-
+  const handleDragStart = (event: DragStartEvent) => { haptics.medium(); setActiveId(event.active.id as string) }
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
@@ -174,34 +134,19 @@ function SortableSection({
   const activeItem = activeId ? items.find(fi => itemKey(fi) === activeId) : null
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
+    <DndContext sensors={sensors} collisionDetection={closestCenter}
       modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
+      onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <SortableContext items={items.map(itemKey)} strategy={verticalListSortingStrategy}>
         {items.map(fi => (
-          <SortableRow
-            key={itemKey(fi)}
-            fi={fi}
-            onToggleComplete={onToggleComplete}
-            onSelectItem={onSelectItem}
-            isDragging={!!activeId}
-            showRecurringIcon={showRecurringIcon}
-          />
+          <SortableRow key={itemKey(fi)} fi={fi}
+            onToggleComplete={onToggleComplete} onSelectItem={onSelectItem}
+            isDragging={!!activeId} showRecurringIcon={showRecurringIcon} />
         ))}
       </SortableContext>
       <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)" }}>
         {activeItem ? (
-          <SortableRow
-            fi={activeItem}
-            onToggleComplete={() => {}}
-            onSelectItem={() => {}}
-            isOverlay
-            showRecurringIcon={showRecurringIcon}
-          />
+          <SortableRow fi={activeItem} onToggleComplete={() => {}} onSelectItem={() => {}} isOverlay showRecurringIcon={showRecurringIcon} />
         ) : null}
       </DragOverlay>
     </DndContext>
@@ -210,12 +155,7 @@ function SortableSection({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function FlaggedList({
-  flaggedItems,
-  recurringItems,
-  onToggleComplete,
-  onSelectItem,
-}: FlaggedListProps) {
+export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, onSelectItem }: FlaggedListProps) {
   const [orderedFlagged, setOrderedFlagged] = useState<FlaggedItem[]>(flaggedItems)
   const [orderedRecurring, setOrderedRecurring] = useState<FlaggedItem[]>(recurringItems)
   const [showCompletedToday, setShowCompletedToday] = useState(true)
@@ -226,6 +166,17 @@ export function FlaggedList({
   const incompleteDaily = orderedRecurring.filter(fi => !fi.item.completed)
   const completedToday = orderedRecurring.filter(fi => fi.item.completed)
   const isEmpty = orderedRecurring.length === 0 && orderedFlagged.length === 0
+
+  // Group incomplete daily items by category (preserving category priority order)
+  const categoryGroups = incompleteDaily.reduce<{ category: Category; items: FlaggedItem[] }[]>((groups, fi) => {
+    const existing = groups.find(g => g.category.id === fi.category.id)
+    if (existing) {
+      existing.items.push(fi)
+    } else {
+      groups.push({ category: fi.category, items: [fi] })
+    }
+    return groups
+  }, [])
 
   if (isEmpty) {
     return (
@@ -246,7 +197,7 @@ export function FlaggedList({
       {/* ── Daily Goals section ── */}
       {orderedRecurring.length > 0 && (
         <div>
-          {/* Section header */}
+          {/* Section header with overall progress */}
           <div className="flex items-center justify-between px-4 py-2 bg-background/50">
             <div className="flex items-center gap-2">
               <RefreshCw className="w-3.5 h-3.5 text-green-500" />
@@ -257,27 +208,42 @@ export function FlaggedList({
             </span>
           </div>
 
-          {/* Progress bar */}
-          {orderedRecurring.length > 0 && (
-            <div className="mx-4 mb-2 h-1.5 bg-secondary rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-500 rounded-full transition-all duration-500"
-                style={{ width: `${(completedToday.length / orderedRecurring.length) * 100}%` }}
-              />
-            </div>
-          )}
-
-          {/* Incomplete daily goals */}
-          {incompleteDaily.length > 0 && (
-            <SortableSection
-              items={incompleteDaily}
-              onReorder={(reordered) => {
-                setOrderedRecurring([...reordered, ...completedToday])
-              }}
-              onToggleComplete={onToggleComplete}
-              onSelectItem={onSelectItem}
-              showRecurringIcon
+          {/* Overall progress bar */}
+          <div className="mx-4 mb-3 h-1.5 bg-secondary rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-500 rounded-full transition-all duration-500"
+              style={{ width: `${(completedToday.length / orderedRecurring.length) * 100}%` }}
             />
+          </div>
+
+          {/* Incomplete daily goals — grouped by category */}
+          {categoryGroups.length > 0 && (
+            <div>
+              {categoryGroups.map(({ category, items }) => (
+                <div key={category.id}>
+                  {/* Category label */}
+                  <div className="flex items-center gap-2 px-4 py-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
+                    <span className="text-xs font-medium text-muted-foreground">{category.name}</span>
+                  </div>
+                  {/* Items in this category */}
+                  <SortableSection
+                    items={items}
+                    onReorder={(reordered) => {
+                      // Replace this category's items in the full ordered list
+                      setOrderedRecurring(prev => {
+                        const otherItems = prev.filter(fi => fi.category.id !== category.id || fi.item.completed)
+                        const completedInCat = prev.filter(fi => fi.category.id === category.id && fi.item.completed)
+                        return [...otherItems.filter(fi => fi.category.id !== category.id), ...reordered, ...completedInCat]
+                      })
+                    }}
+                    onToggleComplete={onToggleComplete}
+                    onSelectItem={onSelectItem}
+                    showRecurringIcon
+                  />
+                </div>
+              ))}
+            </div>
           )}
 
           {/* Completed today — collapsible */}
@@ -292,7 +258,7 @@ export function FlaggedList({
                   Completed today ({completedToday.length})
                 </span>
                 <ChevronDown className={cn(
-                  "w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform",
+                  "w-3.5 h-3.5 text-muted-foreground ml-auto transition-transform duration-200",
                   !showCompletedToday && "-rotate-90"
                 )} />
               </button>
@@ -300,30 +266,19 @@ export function FlaggedList({
               {showCompletedToday && (
                 <div className="opacity-60">
                   {completedToday.map(fi => (
-                    <div
-                      key={itemKey(fi)}
-                      className="flex items-center gap-2 px-4 py-3 border-b border-border last:border-0 bg-card"
-                    >
-                      <div className="w-4" /> {/* spacer for grip */}
+                    <div key={itemKey(fi)}
+                      className="flex items-center gap-2 px-4 py-3 border-b border-border last:border-0 bg-card">
+                      <div className="w-4" />
                       <div onClick={(e) => {
                         e.stopPropagation()
                         haptics.light()
                         onToggleComplete(fi.category.id, fi.item.id)
                       }}>
-                        <Checkbox
-                          checked
-                          className="h-5 w-5 rounded-full border-2"
-                          style={{ borderColor: fi.category.color }}
-                        />
+                        <Checkbox checked className="h-5 w-5 rounded-full border-2" style={{ borderColor: fi.category.color }} />
                       </div>
-                      <div
-                        className="flex-1 min-w-0 cursor-pointer"
-                        onClick={() => onSelectItem(fi.category.id, fi.item.id)}
-                      >
-                        <p className="text-sm font-medium truncate line-through text-muted-foreground">
-                          {fi.item.text}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectItem(fi.category.id, fi.item.id)}>
+                        <p className="text-sm font-medium truncate line-through text-muted-foreground">{fi.item.text}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: fi.category.color }} />
                           <span className="text-xs text-muted-foreground">{fi.category.name}</span>
                         </div>
@@ -338,7 +293,7 @@ export function FlaggedList({
         </div>
       )}
 
-      {/* ── Divider between sections ── */}
+      {/* ── Divider ── */}
       {orderedRecurring.length > 0 && orderedFlagged.length > 0 && (
         <div className="h-3 bg-secondary/30" />
       )}
