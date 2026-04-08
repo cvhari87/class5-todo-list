@@ -8,6 +8,8 @@ export function todayString(): string {
   return new Date().toISOString().split("T")[0] // "YYYY-MM-DD"
 }
 
+const NOW = new Date().toISOString()
+
 const defaultCategories: Category[] = [
   {
     id: "1",
@@ -15,11 +17,11 @@ const defaultCategories: Category[] = [
     color: "#007AFF",
     priority: 1,
     items: [
-      { id: "w0", text: "This week", type: "header", completed: false, flagged: false, createdAt: new Date() },
-      { id: "w1", text: "Review project proposal", type: "todo", completed: false, flagged: true, createdAt: new Date() },
-      { id: "w2", text: "Send weekly report", type: "todo", completed: false, flagged: false, createdAt: new Date() },
-      { id: "w3", text: "Focus on the Q3 deliverables before the end of month.", type: "text", completed: false, flagged: false, createdAt: new Date() },
-      { id: "w4", text: "Schedule team meeting", type: "todo", completed: true, flagged: false, createdAt: new Date() },
+      { id: "w0", text: "This week", type: "header", completed: false, flagged: false, createdAt: NOW },
+      { id: "w1", text: "Review project proposal", type: "todo", completed: false, flagged: true, createdAt: NOW },
+      { id: "w2", text: "Send weekly report", type: "todo", completed: false, flagged: false, createdAt: NOW },
+      { id: "w3", text: "Focus on the Q3 deliverables before the end of month.", type: "text", completed: false, flagged: false, createdAt: NOW },
+      { id: "w4", text: "Schedule team meeting", type: "todo", completed: true, flagged: false, createdAt: NOW },
     ],
   },
   {
@@ -28,9 +30,9 @@ const defaultCategories: Category[] = [
     color: "#34C759",
     priority: 2,
     items: [
-      { id: "p1", text: "Call mom", type: "todo", completed: false, flagged: true, createdAt: new Date() },
-      { id: "p2", text: "Buy groceries", type: "todo", completed: false, flagged: false, createdAt: new Date() },
-      { id: "p3", text: "Renew gym membership", type: "todo", completed: false, flagged: true, createdAt: new Date() },
+      { id: "p1", text: "Call mom", type: "todo", completed: false, flagged: true, createdAt: NOW },
+      { id: "p2", text: "Buy groceries", type: "todo", completed: false, flagged: false, createdAt: NOW },
+      { id: "p3", text: "Renew gym membership", type: "todo", completed: false, flagged: true, createdAt: NOW },
     ],
   },
   {
@@ -39,10 +41,10 @@ const defaultCategories: Category[] = [
     color: "#FF9500",
     priority: 3,
     items: [
-      { id: "h0", text: "Goals", type: "header", completed: false, flagged: false, createdAt: new Date() },
-      { id: "h1", text: "Exercise 20 mins", type: "todo", completed: false, flagged: false, recurring: true, createdAt: new Date() },
-      { id: "h2", text: "Drink 8 glasses of water", type: "todo", completed: false, flagged: false, recurring: true, createdAt: new Date() },
-      { id: "h3", text: "Book dentist appointment", type: "todo", completed: false, flagged: true, createdAt: new Date() },
+      { id: "h0", text: "Goals", type: "header", completed: false, flagged: false, createdAt: NOW },
+      { id: "h1", text: "Exercise 20 mins", type: "todo", completed: false, flagged: false, recurring: true, createdAt: NOW },
+      { id: "h2", text: "Drink 8 glasses of water", type: "todo", completed: false, flagged: false, recurring: true, createdAt: NOW },
+      { id: "h3", text: "Book dentist appointment", type: "todo", completed: false, flagged: true, createdAt: NOW },
     ],
   },
 ]

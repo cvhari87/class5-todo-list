@@ -98,7 +98,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
       type: addingType,
       completed: false,
       flagged: false,
-      createdAt: new Date(),
+      createdAt: new Date().toISOString(),
       dueDate: newItemDueDate || undefined,
     }
     onUpdateCategory({ ...category, items: [...category.items, newItem] })
@@ -596,6 +596,7 @@ function NoteItemRow({
   const [editText, setEditText] = useState(item.text)
   const [editingDate, setEditingDate] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [justCompleted, setJustCompleted] = useState(false)
   const [swipeOffset, setSwipeOffset] = useState(0)
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
@@ -713,13 +714,26 @@ function NoteItemRow({
         <div className="flex-shrink-0 flex items-center justify-center w-11 h-11">
           {item.type === "todo" && (
             <button
-              onClick={onToggleComplete}
-              className="flex items-center justify-center w-11 h-11 rounded-full active:bg-secondary/50 transition-colors"
+              onClick={() => {
+                if (!item.completed) {
+                  setJustCompleted(true)
+                  setTimeout(() => setJustCompleted(false), 600)
+                }
+                onToggleComplete()
+              }}
+              className={cn(
+                "flex items-center justify-center w-11 h-11 rounded-full transition-all duration-150",
+                justCompleted && "scale-125",
+                !justCompleted && "active:bg-secondary/50"
+              )}
               aria-label={item.completed ? "Mark incomplete" : "Mark complete"}
             >
               <Checkbox
                 checked={item.completed}
-                className="h-5 w-5 rounded-full border-2 pointer-events-none"
+                className={cn(
+                  "h-5 w-5 rounded-full border-2 pointer-events-none transition-all duration-300",
+                  justCompleted && "scale-110"
+                )}
                 style={{ borderColor: categoryColor }}
               />
             </button>
@@ -731,26 +745,37 @@ function NoteItemRow({
         {/* Content */}
         <div className="flex-1 min-w-0 py-2">
           {editing ? (
-            <Input
-              autoFocus
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              onBlur={commitEdit}
-              onKeyDown={handleEditKeyDown}
-              className={cn(
-                "border-0 bg-transparent p-0 h-auto focus-visible:ring-0",
-                item.type === "header" && "text-base font-semibold",
-                item.type === "text" && "text-sm text-muted-foreground",
-                item.type === "todo" && "text-sm"
-              )}
-            />
+            item.type === "text" ? (
+              <textarea
+                autoFocus
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={(e) => { if (e.key === "Escape") { setEditText(item.text); setEditing(false) } }}
+                rows={3}
+                className="w-full bg-transparent text-sm text-muted-foreground leading-relaxed resize-none focus:outline-none p-0 border-0"
+              />
+            ) : (
+              <Input
+                autoFocus
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={handleEditKeyDown}
+                className={cn(
+                  "border-0 bg-transparent p-0 h-auto focus-visible:ring-0",
+                  item.type === "header" && "text-base font-semibold",
+                  item.type === "todo" && "text-sm"
+                )}
+              />
+            )
           ) : (
             <p
               onClick={() => { setEditText(item.text); setEditing(true) }}
               className={cn(
                 "cursor-pointer select-none leading-snug",
                 item.type === "header" && "text-base font-semibold tracking-tight",
-                item.type === "text" && "text-sm text-muted-foreground leading-relaxed",
+                item.type === "text" && "text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap",
                 item.type === "todo" && "text-sm",
                 item.type === "todo" && item.completed && "line-through text-muted-foreground"
               )}

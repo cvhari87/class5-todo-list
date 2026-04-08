@@ -473,6 +473,16 @@ export default function TodoApp() {
                     </DragOverlay>
                   </DndContext>
 
+                  {categories.length === 0 && !searchQuery && (
+                    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                      <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+                        <List className="w-8 h-8 text-muted-foreground/50" />
+                      </div>
+                      <p className="font-medium text-foreground">No notes yet</p>
+                      <p className="text-sm text-muted-foreground mt-1">Tap &ldquo;New Note&rdquo; below to get started</p>
+                    </div>
+                  )}
+
                   <CategoryManager onAddCategory={handleAddCategory} />
                 </div>
               )}

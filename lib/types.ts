@@ -6,7 +6,7 @@ export interface TodoItem {
   type: ItemType
   completed: boolean
   flagged: boolean
-  createdAt: Date
+  createdAt: string          // ISO date string — stored as string, safe across JSON serialization
   dueDate?: string           // ISO date string YYYY-MM-DD
   recurring?: boolean        // true = resets to incomplete each new day
   lastCompletedDate?: string // ISO date "YYYY-MM-DD" — last day it was checked off
