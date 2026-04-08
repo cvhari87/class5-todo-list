@@ -3,6 +3,25 @@
 import { useState, useRef, useEffect, useMemo } from "react"
 import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable"
+import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers"
+import { CSS } from "@dnd-kit/utilities"
 import { Category, TodoItem, ItemType } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
@@ -36,65 +55,31 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
   const [sortOrder, setSortOrder] = useState<SortOrder>("default")
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(false)
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
-
-  // Refs to avoid stale closures in pointer event handlers
-  const draggingIdRef = useRef<string | null>(null)
-  const dragOverIdRef = useRef<string | null>(null)
-  const categoryRef = useRef(category)
-  const onUpdateCategoryRef = useRef(onUpdateCategory)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const confirmNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => { categoryRef.current = category }, [category])
-  useEffect(() => { onUpdateCategoryRef.current = onUpdateCategory }, [onUpdateCategory])
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  )
 
-  // Global pointer listeners — active only while dragging
-  useEffect(() => {
-    if (!draggingId) return
+  const handleItemDragStart = (event: DragStartEvent) => {
+    haptics.medium()
+    setActiveDragId(event.active.id as string)
+  }
 
-    const onPointerMove = (e: PointerEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const row = el?.closest("[data-drag-id]") as HTMLElement | null
-      const targetId = row?.dataset.dragId
-      if (targetId && targetId !== draggingIdRef.current) {
-        dragOverIdRef.current = targetId
-        setDragOverId(targetId)
+  const handleItemDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveDragId(null)
+    if (over && active.id !== over.id) {
+      haptics.light()
+      const items = [...category.items]
+      const oldIndex = items.findIndex(i => i.id === active.id)
+      const newIndex = items.findIndex(i => i.id === over.id)
+      if (oldIndex !== -1 && newIndex !== -1) {
+        onUpdateCategory({ ...category, items: arrayMove(items, oldIndex, newIndex) })
       }
     }
-
-    const onPointerUp = () => {
-      const from = draggingIdRef.current
-      const to = dragOverIdRef.current
-      if (from && to) {
-        const items = [...categoryRef.current.items]
-        const fromIdx = items.findIndex(i => i.id === from)
-        const toIdx = items.findIndex(i => i.id === to)
-        if (fromIdx !== -1 && toIdx !== -1) {
-          const [moved] = items.splice(fromIdx, 1)
-          items.splice(toIdx, 0, moved)
-          onUpdateCategoryRef.current({ ...categoryRef.current, items })
-        }
-      }
-      draggingIdRef.current = null
-      dragOverIdRef.current = null
-      setDraggingId(null)
-      setDragOverId(null)
-    }
-
-    document.addEventListener("pointermove", onPointerMove)
-    document.addEventListener("pointerup", onPointerUp)
-    return () => {
-      document.removeEventListener("pointermove", onPointerMove)
-      document.removeEventListener("pointerup", onPointerUp)
-    }
-  }, [draggingId])
-
-  const handleDragStart = (itemId: string) => {
-    draggingIdRef.current = itemId
-    dragOverIdRef.current = null
-    setDraggingId(itemId)
-    setDragOverId(null)
   }
 
   const startAdding = (type: ItemType) => {
@@ -239,23 +224,52 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
     }
   }, [category.items, sortOrder])
 
-  const renderRows = (items: TodoItem[]) =>
-    items.map(item => (
+  const renderRows = (items: TodoItem[], sortable = false) => {
+    const rows = items.map(item => (
       <NoteItemRow
         key={item.id}
         item={item}
         categoryColor={category.color}
-        isDragging={draggingId === item.id}
-        isDragOver={dragOverId === item.id}
         onToggleComplete={() => handleToggleComplete(item.id)}
         onToggleFlag={() => handleToggleFlag(item.id)}
         onToggleRecurring={() => handleToggleRecurring(item.id)}
         onDelete={() => handleDeleteItem(item.id)}
         onUpdateText={(text) => handleUpdateText(item.id, text)}
         onUpdateDueDate={(date) => handleUpdateDueDate(item.id, date)}
-        onDragStart={() => handleDragStart(item.id)}
       />
     ))
+
+    if (!sortable) return rows
+
+    return (
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
+        onDragStart={handleItemDragStart}
+        onDragEnd={handleItemDragEnd}
+      >
+        <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+          {rows}
+        </SortableContext>
+        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)" }}>
+          {activeDragId ? (
+            <NoteItemRow
+              item={category.items.find(i => i.id === activeDragId)!}
+              categoryColor={category.color}
+              isOverlay
+              onToggleComplete={() => {}}
+              onToggleFlag={() => {}}
+              onToggleRecurring={() => {}}
+              onDelete={() => {}}
+              onUpdateText={() => {}}
+              onUpdateDueDate={() => {}}
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    )
+  }
 
   return (
     <div className="flex flex-col min-h-[100dvh]">
@@ -335,7 +349,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
       {/* ── Items List ── */}
       <div className="flex-1 overflow-auto pb-[calc(5rem+env(safe-area-inset-bottom))]">
         {incompleteItems.length > 0 && (
-          <div className="divide-y divide-border/50">{renderRows(incompleteItems)}</div>
+          <div className="divide-y divide-border/50">{renderRows(incompleteItems, true)}</div>
         )}
 
         {completedItems.length > 0 && (
@@ -345,7 +359,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
                 Completed ({completedItems.length})
               </p>
             </div>
-            <div className="divide-y divide-border/50 opacity-60">{renderRows(completedItems)}</div>
+            <div className="divide-y divide-border/50 opacity-60">{renderRows(completedItems, false)}</div>
           </div>
         )}
 
@@ -493,22 +507,33 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
 interface NoteItemRowProps {
   item: TodoItem
   categoryColor: string
-  isDragging: boolean
-  isDragOver: boolean
+  isOverlay?: boolean
   onToggleComplete: () => void
   onToggleFlag: () => void
   onToggleRecurring: () => void
   onDelete: () => void
   onUpdateText: (text: string) => void
   onUpdateDueDate: (date: string) => void
-  onDragStart: () => void
 }
 
 function NoteItemRow({
-  item, categoryColor, isDragging, isDragOver,
+  item, categoryColor, isOverlay,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
-  onUpdateText, onUpdateDueDate, onDragStart,
+  onUpdateText, onUpdateDueDate,
 }: NoteItemRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id })
+
+  const dndStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition ?? "transform 200ms cubic-bezier(0.25, 1, 0.5, 1)",
+  }
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(item.text)
   const [editingDate, setEditingDate] = useState(false)
@@ -577,8 +602,13 @@ function NoteItemRow({
 
   return (
     <div
-      data-drag-id={item.id}
-      className={cn("relative overflow-hidden", isDragOver && "border-t-2 border-primary")}
+      ref={setNodeRef}
+      style={dndStyle}
+      className={cn(
+        "relative overflow-hidden",
+        isDragging && !isOverlay && "opacity-30",
+        isOverlay && "shadow-2xl rounded-xl opacity-95 scale-[1.02]"
+      )}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -589,20 +619,15 @@ function NoteItemRow({
       </div>
 
       <div
-        className={cn(
-          "flex items-center gap-1 px-2 py-1 bg-card transition-all select-none",
-          isDragging && "opacity-40 scale-95"
-        )}
+        className="flex items-center gap-1 px-2 py-1 bg-card transition-all select-none"
         style={{ transform: `translateX(${swipeOffset}px)` }}
         onClick={() => swipeOffset < 0 ? setSwipeOffset(0) : undefined}
       >
-        {/* Grip handle — 44px touch target */}
+        {/* Grip handle — dnd-kit listeners, 44px touch target */}
         <div
+          {...attributes}
+          {...listeners}
           className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none flex items-center justify-center w-8 h-11 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
-          onPointerDown={(e) => {
-            e.preventDefault()
-            onDragStart()
-          }}
         >
           <GripVertical className="w-4 h-4" />
         </div>

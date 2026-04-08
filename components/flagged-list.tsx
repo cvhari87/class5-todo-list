@@ -241,11 +241,11 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
                   <SortableSection
                     items={items}
                     onReorder={(reordered) => {
-                      // Replace this category's items in the full ordered list
+                      // Replace this category's incomplete items in the full ordered list
                       setOrderedRecurring(prev => {
-                        const otherItems = prev.filter(fi => fi.category.id !== category.id || fi.item.completed)
+                        const otherItems = prev.filter(fi => fi.category.id !== category.id)
                         const completedInCat = prev.filter(fi => fi.category.id === category.id && fi.item.completed)
-                        return [...otherItems.filter(fi => fi.category.id !== category.id), ...reordered, ...completedInCat]
+                        return [...otherItems, ...reordered, ...completedInCat]
                       })
                     }}
                     onToggleComplete={onToggleComplete}
