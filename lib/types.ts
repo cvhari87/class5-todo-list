@@ -7,6 +7,7 @@ export interface TodoItem {
   completed: boolean
   flagged: boolean
   createdAt: Date
+  dueDate?: string // ISO date string YYYY-MM-DD
 }
 
 export interface Category {

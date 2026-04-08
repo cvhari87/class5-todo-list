@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Flag, List } from "lucide-react"
+import { Flag, List, Moon, Sun, Search, X } from "lucide-react"
+import { useTheme } from "next-themes"
+import { toast } from "sonner"
 import { Category } from "@/lib/types"
 import { getCategories, saveCategories, getFlaggedItems } from "@/lib/store"
 import { FlaggedList } from "@/components/flagged-list"
@@ -17,6 +19,9 @@ export default function TodoApp() {
   const [currentView, setCurrentView] = useState<View>("flagged")
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showSearch, setShowSearch] = useState(false)
+  const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     setCategories(getCategories())
@@ -65,17 +70,40 @@ export default function TodoApp() {
     setCategories(prev => [...prev, newCategory])
   }
 
-  const handleReorderCategories = (dragIndex: number, dropIndex: number) => {
+  const handleDeleteCategory = (categoryId: string) => {
+    const deleted = categories.find(c => c.id === categoryId)
+    if (!deleted) return
+    setCategories(prev => prev.filter(c => c.id !== categoryId))
+    setCurrentView("categories")
+    toast("Note deleted", {
+      action: {
+        label: "Undo",
+        onClick: () => setCategories(prev => [...prev, deleted]),
+      },
+    })
+  }
+
+  const handleMoveCategory = (index: number, direction: "up" | "down") => {
     setCategories(prev => {
-      const newCategories = [...prev]
-      const [removed] = newCategories.splice(dragIndex, 1)
-      newCategories.splice(dropIndex, 0, removed)
-      return newCategories.map((cat, index) => ({ ...cat, priority: index + 1 }))
+      const sorted = [...prev].sort((a, b) => a.priority - b.priority)
+      const newIndex = direction === "up" ? index - 1 : index + 1
+      if (newIndex < 0 || newIndex >= sorted.length) return prev
+      const [moved] = sorted.splice(index, 1)
+      sorted.splice(newIndex, 0, moved)
+      return sorted.map((cat, i) => ({ ...cat, priority: i + 1 }))
     })
   }
 
   const flaggedItems = getFlaggedItems(categories)
   const selectedCategory = categories.find(cat => cat.id === selectedCategoryId)
+
+  // Search: filter categories whose name or items match
+  const filteredCategories = searchQuery.trim()
+    ? categories.filter(cat =>
+        cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cat.items.some(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : categories
 
   if (!mounted) {
     return (
@@ -93,6 +121,7 @@ export default function TodoApp() {
             category={selectedCategory}
             onBack={() => setCurrentView("categories")}
             onUpdateCategory={handleUpdateCategory}
+            onDeleteCategory={() => handleDeleteCategory(selectedCategory.id)}
           />
         ) : (
           <>
@@ -102,7 +131,35 @@ export default function TodoApp() {
                 <h1 className="text-3xl font-bold tracking-tight">
                   {currentView === "flagged" ? "Flagged" : "Notes"}
                 </h1>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setShowSearch(s => !s); setSearchQuery("") }}
+                    className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    {showSearch ? <X className="w-5 h-5" /> : <Search className="w-5 h-5" />}
+                  </button>
+                  <button
+                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                    className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
+
+              {/* Search input */}
+              {showSearch && (
+                <div className="mb-4 animate-in fade-in slide-in-from-top-1">
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search notes and items..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-card border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              )}
 
               {/* View Toggle */}
               <div className="flex items-center gap-1 bg-card rounded-xl p-1 shadow-sm self-start">
@@ -153,31 +210,38 @@ export default function TodoApp() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {categories
+                  {filteredCategories
                     .sort((a, b) => a.priority - b.priority)
-                    .map((category, index) => (
-                      <div
-                        key={category.id}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", index.toString())
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault()
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault()
-                          const dragIndex = parseInt(e.dataTransfer.getData("text/plain"))
-                          handleReorderCategories(dragIndex, index)
-                        }}
-                      >
-                        <CategoryCard
-                          category={category}
-                          onClick={() => handleSelectCategory(category.id)}
-                        />
+                    .map((category, index, arr) => (
+                      <div key={category.id} className="flex items-center gap-2">
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            onClick={() => handleMoveCategory(index, "up")}
+                            disabled={index === 0}
+                            className="p-1 text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                          </button>
+                          <button
+                            onClick={() => handleMoveCategory(index, "down")}
+                            disabled={index === arr.length - 1}
+                            className="p-1 text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                          </button>
+                        </div>
+                        <div className="flex-1">
+                          <CategoryCard
+                            category={category}
+                            onClick={() => handleSelectCategory(category.id)}
+                          />
+                        </div>
                       </div>
                     ))}
-                  <CategoryManager onAddCategory={handleAddCategory} />
+                  {filteredCategories.length === 0 && searchQuery && (
+                    <p className="text-center text-muted-foreground text-sm py-8">No notes match "{searchQuery}"</p>
+                  )}
+                  {!searchQuery && <CategoryManager onAddCategory={handleAddCategory} />}
                 </div>
               )}
             </main>
