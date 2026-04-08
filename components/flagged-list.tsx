@@ -36,6 +36,7 @@ interface FlaggedListProps {
   recurringItems: FlaggedItem[]
   onToggleComplete: (categoryId: string, itemId: string) => void
   onSelectItem: (categoryId: string, itemId: string) => void
+  searchQuery?: string
 }
 
 function itemKey(fi: FlaggedItem) {
@@ -155,7 +156,7 @@ function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, sho
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, onSelectItem }: FlaggedListProps) {
+export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, onSelectItem, searchQuery = "" }: FlaggedListProps) {
   const [orderedFlagged, setOrderedFlagged] = useState<FlaggedItem[]>(flaggedItems)
   const [orderedRecurring, setOrderedRecurring] = useState<FlaggedItem[]>(recurringItems)
   const [showCompletedToday, setShowCompletedToday] = useState(true)
@@ -165,6 +166,7 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
 
   const incompleteDaily = orderedRecurring.filter(fi => !fi.item.completed)
   const completedToday = orderedRecurring.filter(fi => fi.item.completed)
+  const isSearching = searchQuery.trim().length > 0
   const isEmpty = orderedRecurring.length === 0 && orderedFlagged.length === 0
 
   // Group incomplete daily items by category (preserving category priority order)
@@ -184,10 +186,19 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
         <div className="w-16 h-16 rounded-full bg-accent/30 flex items-center justify-center mb-4">
           <Flag className="w-8 h-8 text-accent-foreground" />
         </div>
-        <p className="text-muted-foreground text-center">Nothing here yet</p>
-        <p className="text-sm text-muted-foreground/70 text-center mt-1">
-          Flag items or mark tasks as daily goals to see them here
-        </p>
+        {isSearching ? (
+          <>
+            <p className="text-muted-foreground text-center">No results for &ldquo;{searchQuery}&rdquo;</p>
+            <p className="text-sm text-muted-foreground/70 text-center mt-1">Try a different search term</p>
+          </>
+        ) : (
+          <>
+            <p className="text-muted-foreground text-center">Nothing here yet</p>
+            <p className="text-sm text-muted-foreground/70 text-center mt-1">
+              Flag items or mark tasks as daily goals to see them here
+            </p>
+          </>
+        )}
       </div>
     )
   }

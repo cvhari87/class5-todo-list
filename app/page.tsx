@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense, useRef, useCallback } from "react"
+import { useState, useEffect, Suspense, useRef, useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import { Flag, List, Moon, Sun, Search, X, GripVertical } from "lucide-react"
 import { useTheme } from "next-themes"
@@ -308,11 +308,33 @@ export default function TodoApp() {
     })
   }
 
-  const flaggedItems = getFlaggedItems(categories)
-  const recurringItems = getRecurringItems(categories)
-  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId)
+  const flaggedItems = useMemo(() => getFlaggedItems(categories), [categories])
+  const recurringItems = useMemo(() => getRecurringItems(categories), [categories])
+  const selectedCategory = useMemo(
+    () => categories.find(cat => cat.id === selectedCategoryId),
+    [categories, selectedCategoryId]
+  )
+  const sortedCategories = useMemo(
+    () => [...categories].sort((a, b) => a.priority - b.priority),
+    [categories]
+  )
 
-  const sortedCategories = [...categories].sort((a, b) => a.priority - b.priority)
+  // Search: filter flagged + recurring items when in Flagged view
+  const filteredFlaggedItems = useMemo(() => {
+    if (!searchQuery.trim()) return flaggedItems
+    const q = searchQuery.toLowerCase()
+    return flaggedItems.filter(
+      fi => fi.item.text.toLowerCase().includes(q) || fi.category.name.toLowerCase().includes(q)
+    )
+  }, [flaggedItems, searchQuery])
+
+  const filteredRecurringItems = useMemo(() => {
+    if (!searchQuery.trim()) return recurringItems
+    const q = searchQuery.toLowerCase()
+    return recurringItems.filter(
+      fi => fi.item.text.toLowerCase().includes(q) || fi.category.name.toLowerCase().includes(q)
+    )
+  }, [recurringItems, searchQuery])
 
   if (!mounted) {
     return (
@@ -396,8 +418,8 @@ export default function TodoApp() {
 
             {/* ── Content ── */}
             <main className="flex-1 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] overflow-y-auto">
-              {/* Search results overlay */}
-              {searchActive ? (
+              {/* Search active on Notes tab → full search results */}
+              {searchActive && currentView !== "flagged" ? (
                 <SearchResults
                   query={searchQuery}
                   categories={categories}
@@ -406,10 +428,11 @@ export default function TodoApp() {
               ) : currentView === "flagged" ? (
                 <div className="bg-card rounded-xl shadow-sm overflow-hidden">
                   <FlaggedList
-                    flaggedItems={flaggedItems}
-                    recurringItems={recurringItems}
+                    flaggedItems={filteredFlaggedItems}
+                    recurringItems={filteredRecurringItems}
                     onToggleComplete={handleToggleComplete}
                     onSelectItem={handleSelectItem}
+                    searchQuery={searchActive ? searchQuery : ""}
                   />
                 </div>
               ) : (

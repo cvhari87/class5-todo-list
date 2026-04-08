@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { Category, TodoItem, ItemType } from "@/lib/types"
@@ -218,23 +218,26 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
     return () => { if (confirmNoteTimer.current) clearTimeout(confirmNoteTimer.current) }
   }, [])
 
-  const sortItems = (items: TodoItem[]) => {
-    switch (sortOrder) {
-      case "flagged": return [...items].sort((a, b) => (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0))
-      case "incomplete": return [...items].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0))
-      case "alpha": return [...items].sort((a, b) => a.text.localeCompare(b.text))
-      default: return items
-    }
-  }
-
-  const incompleteItems = sortItems(category.items.filter(item => item.type !== "todo" || !item.completed))
-  const completedItems = sortItems(category.items.filter(item => item.type === "todo" && item.completed))
-  const todoTotal = category.items.filter(i => i.type === "todo").length
-  const todoRemaining = category.items.filter(i => i.type === "todo" && !i.completed).length
-
   const sortLabels: Record<SortOrder, string> = {
     default: "Default", flagged: "Flagged first", incomplete: "Incomplete first", alpha: "A → Z",
   }
+
+  const { incompleteItems, completedItems, todoTotal, todoRemaining } = useMemo(() => {
+    const sortItems = (items: TodoItem[]) => {
+      switch (sortOrder) {
+        case "flagged": return [...items].sort((a, b) => (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0))
+        case "incomplete": return [...items].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0))
+        case "alpha": return [...items].sort((a, b) => a.text.localeCompare(b.text))
+        default: return items
+      }
+    }
+    return {
+      incompleteItems: sortItems(category.items.filter(item => item.type !== "todo" || !item.completed)),
+      completedItems: sortItems(category.items.filter(item => item.type === "todo" && item.completed)),
+      todoTotal: category.items.filter(i => i.type === "todo").length,
+      todoRemaining: category.items.filter(i => i.type === "todo" && !i.completed).length,
+    }
+  }, [category.items, sortOrder])
 
   const renderRows = (items: TodoItem[]) =>
     items.map(item => (
@@ -402,40 +405,22 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         <div className="max-w-lg mx-auto flex items-center justify-between">
-          {/* Sort button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowSortMenu(s => !s)}
-              className={cn(
-                "flex items-center gap-1.5 text-sm h-10 px-3 rounded-xl transition-colors",
-                sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-              )}
-            >
-              <ArrowUpDown className="w-4 h-4" />
-              <span className="text-xs">{sortLabels[sortOrder]}</span>
-            </button>
-            {showSortMenu && (
-              <div className="absolute bottom-12 left-0 bg-card rounded-2xl shadow-xl border border-border overflow-hidden w-48 animate-in fade-in slide-in-from-bottom-2 z-10">
-                {(["default", "flagged", "incomplete", "alpha"] as SortOrder[]).map(opt => (
-                  <button
-                    key={opt}
-                    onClick={() => { setSortOrder(opt); setShowSortMenu(false) }}
-                    className={cn(
-                      "w-full text-left px-4 py-3.5 text-sm hover:bg-secondary/50 transition-colors border-b border-border last:border-0",
-                      sortOrder === opt && "text-primary font-medium"
-                    )}
-                  >
-                    {sortLabels[opt]}
-                  </button>
-                ))}
-              </div>
+          {/* Sort button — opens bottom sheet */}
+          <button
+            onClick={() => { haptics.light(); setShowSortMenu(s => !s) }}
+            className={cn(
+              "flex items-center gap-1.5 h-10 px-3 rounded-xl transition-colors",
+              sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
             )}
-          </div>
+          >
+            <ArrowUpDown className="w-4 h-4" />
+            <span className="text-xs">{sortLabels[sortOrder]}</span>
+          </button>
 
           {/* Add button — 48px, prominent */}
           <div className="relative">
             <button
-              onClick={() => setAddMenuOpen(prev => !prev)}
+              onClick={() => { haptics.light(); setAddMenuOpen(prev => !prev) }}
               className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
               aria-label="Add item"
             >
@@ -464,6 +449,43 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
           </div>
         </div>
       </div>
+
+      {/* ── Sort Bottom Sheet ── */}
+      {showSortMenu && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={() => setShowSortMenu(false)}
+          />
+          {/* Sheet */}
+          <div
+            className="relative bg-card rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-200"
+            style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          >
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-5 pb-2">Sort order</p>
+            {(["default", "flagged", "incomplete", "alpha"] as SortOrder[]).map(opt => (
+              <button
+                key={opt}
+                onClick={() => { haptics.light(); setSortOrder(opt); setShowSortMenu(false) }}
+                className={cn(
+                  "flex items-center justify-between w-full px-5 py-4 text-base transition-colors active:bg-secondary border-b border-border last:border-0",
+                  sortOrder === opt ? "text-primary font-semibold" : "text-foreground"
+                )}
+              >
+                <span>{sortLabels[opt]}</span>
+                {sortOrder === opt && (
+                  <span className="text-primary text-lg">✓</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
