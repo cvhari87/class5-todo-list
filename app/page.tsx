@@ -1,10 +1,29 @@
 "use client"
 
-import { useState, useEffect, useRef, Suspense } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Flag, List, Moon, Sun, Search, X, GripVertical } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable"
+import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers"
+import { CSS } from "@dnd-kit/utilities"
 import { Category } from "@/lib/types"
 import { getCategories, saveCategories, getFlaggedItems } from "@/lib/store"
 import { FlaggedList } from "@/components/flagged-list"
@@ -25,6 +44,54 @@ function SearchParamsReader({ onView }: { onView: (view: string | null) => void 
   return null
 }
 
+// Sortable category row using dnd-kit
+function SortableCategoryRow({
+  category,
+  onClick,
+  isOverlay,
+}: {
+  category: Category
+  onClick: () => void
+  isOverlay?: boolean
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition ?? "transform 200ms cubic-bezier(0.25, 1, 0.5, 1)",
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center gap-2",
+        isDragging && !isOverlay && "opacity-30",
+        isOverlay && "scale-[1.03] shadow-2xl rounded-xl opacity-95"
+      )}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 touch-none p-2 text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing select-none transition-colors"
+      >
+        <GripVertical className="w-5 h-5" />
+      </div>
+      <div className="flex-1">
+        <CategoryCard category={category} onClick={onClick} />
+      </div>
+    </div>
+  )
+}
+
 export default function TodoApp() {
   const [categories, setCategories] = useState<Category[]>([])
   const [currentView, setCurrentView] = useState<View>("flagged")
@@ -32,16 +99,17 @@ export default function TodoApp() {
   const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [showSearch, setShowSearch] = useState(false)
+  const [activeCatId, setActiveCatId] = useState<string | null>(null)
   const { theme, setTheme } = useTheme()
 
-  // Drag-to-reorder state
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
-  const draggingIdRef = useRef<string | null>(null)
-  const dragOverIdRef = useRef<string | null>(null)
-  const categoriesRef = useRef<Category[]>([])
-
-  useEffect(() => { categoriesRef.current = categories }, [categories])
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    })
+  )
 
   useEffect(() => {
     setCategories(getCategories())
@@ -59,55 +127,24 @@ export default function TodoApp() {
     }
   }, [categories, mounted])
 
-  // Global pointer listeners for drag reorder — active only while dragging
-  useEffect(() => {
-    if (!draggingId) return
-
-    const onPointerMove = (e: PointerEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const row = el?.closest("[data-cat-id]") as HTMLElement | null
-      const targetId = row?.dataset.catId
-      if (targetId && targetId !== draggingIdRef.current) {
-        dragOverIdRef.current = targetId
-        setDragOverId(targetId)
-      }
-    }
-
-    const onPointerUp = () => {
-      const from = draggingIdRef.current
-      const to = dragOverIdRef.current
-      if (from && to && from !== to) {
-        haptics.light()
-        setCategories(prev => {
-          const sorted = [...prev].sort((a, b) => a.priority - b.priority)
-          const fromIdx = sorted.findIndex(c => c.id === from)
-          const toIdx = sorted.findIndex(c => c.id === to)
-          if (fromIdx === -1 || toIdx === -1) return prev
-          const [moved] = sorted.splice(fromIdx, 1)
-          sorted.splice(toIdx, 0, moved)
-          return sorted.map((cat, i) => ({ ...cat, priority: i + 1 }))
-        })
-      }
-      draggingIdRef.current = null
-      dragOverIdRef.current = null
-      setDraggingId(null)
-      setDragOverId(null)
-    }
-
-    document.addEventListener("pointermove", onPointerMove)
-    document.addEventListener("pointerup", onPointerUp)
-    return () => {
-      document.removeEventListener("pointermove", onPointerMove)
-      document.removeEventListener("pointerup", onPointerUp)
-    }
-  }, [draggingId])
-
-  const handleDragStart = (categoryId: string) => {
+  const handleCatDragStart = (event: DragStartEvent) => {
     haptics.medium()
-    draggingIdRef.current = categoryId
-    dragOverIdRef.current = null
-    setDraggingId(categoryId)
-    setDragOverId(null)
+    setActiveCatId(event.active.id as string)
+  }
+
+  const handleCatDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveCatId(null)
+    if (over && active.id !== over.id) {
+      haptics.light()
+      setCategories(prev => {
+        const sorted = [...prev].sort((a, b) => a.priority - b.priority)
+        const oldIndex = sorted.findIndex(c => c.id === active.id)
+        const newIndex = sorted.findIndex(c => c.id === over.id)
+        const reordered = arrayMove(sorted, oldIndex, newIndex)
+        return reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
+      })
+    }
   }
 
   const handleToggleComplete = (categoryId: string, itemId: string) => {
@@ -278,39 +315,46 @@ export default function TodoApp() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {filteredCategories
-                    .sort((a, b) => a.priority - b.priority)
-                    .map((category) => (
-                      <div
-                        key={category.id}
-                        data-cat-id={category.id}
-                        className={cn(
-                          "flex items-center gap-2 transition-all",
-                          draggingId === category.id && "opacity-40 scale-[0.98]",
-                          dragOverId === category.id && draggingId !== category.id && "border-t-2 border-primary pt-1"
-                        )}
-                      >
-                        {/* Drag handle */}
-                        <div
-                          className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none p-2 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
-                          onPointerDown={(e) => {
-                            e.preventDefault()
-                            handleDragStart(category.id)
-                          }}
-                        >
-                          <GripVertical className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1">
-                          <CategoryCard
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
+                    onDragStart={handleCatDragStart}
+                    onDragEnd={handleCatDragEnd}
+                  >
+                    <SortableContext
+                      items={filteredCategories
+                        .sort((a, b) => a.priority - b.priority)
+                        .map(c => c.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {filteredCategories
+                        .sort((a, b) => a.priority - b.priority)
+                        .map((category) => (
+                          <SortableCategoryRow
+                            key={category.id}
                             category={category}
                             onClick={() => {
-                              // Only navigate if not dragging
-                              if (!draggingId) handleSelectCategory(category.id)
+                              if (!activeCatId) handleSelectCategory(category.id)
                             }}
                           />
-                        </div>
-                      </div>
-                    ))}
+                        ))}
+                    </SortableContext>
+
+                    <DragOverlay dropAnimation={{
+                      duration: 200,
+                      easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+                    }}>
+                      {activeCatId ? (
+                        <SortableCategoryRow
+                          category={categories.find(c => c.id === activeCatId)!}
+                          onClick={() => {}}
+                          isOverlay
+                        />
+                      ) : null}
+                    </DragOverlay>
+                  </DndContext>
+
                   {filteredCategories.length === 0 && searchQuery && (
                     <p className="text-center text-muted-foreground text-sm py-8">No notes match "{searchQuery}"</p>
                   )}
