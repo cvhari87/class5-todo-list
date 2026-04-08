@@ -224,52 +224,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
     }
   }, [category.items, sortOrder])
 
-  const renderRows = (items: TodoItem[], sortable = false) => {
-    const rows = items.map(item => (
-      <NoteItemRow
-        key={item.id}
-        item={item}
-        categoryColor={category.color}
-        onToggleComplete={() => handleToggleComplete(item.id)}
-        onToggleFlag={() => handleToggleFlag(item.id)}
-        onToggleRecurring={() => handleToggleRecurring(item.id)}
-        onDelete={() => handleDeleteItem(item.id)}
-        onUpdateText={(text) => handleUpdateText(item.id, text)}
-        onUpdateDueDate={(date) => handleUpdateDueDate(item.id, date)}
-      />
-    ))
-
-    if (!sortable) return rows
-
-    return (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
-        onDragStart={handleItemDragStart}
-        onDragEnd={handleItemDragEnd}
-      >
-        <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-          {rows}
-        </SortableContext>
-        <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)" }}>
-          {activeDragId ? (
-            <NoteItemRow
-              item={category.items.find(i => i.id === activeDragId)!}
-              categoryColor={category.color}
-              isOverlay
-              onToggleComplete={() => {}}
-              onToggleFlag={() => {}}
-              onToggleRecurring={() => {}}
-              onDelete={() => {}}
-              onUpdateText={() => {}}
-              onUpdateDueDate={() => {}}
-            />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-    )
-  }
+  // No renderRows — use SortableItemList component below
 
   return (
     <div className="flex flex-col min-h-[100dvh]">
@@ -349,7 +304,23 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
       {/* ── Items List ── */}
       <div className="flex-1 overflow-auto pb-[calc(5rem+env(safe-area-inset-bottom))]">
         {incompleteItems.length > 0 && (
-          <div className="divide-y divide-border/50">{renderRows(incompleteItems, true)}</div>
+          <div className="divide-y divide-border/50">
+            <SortableItemList
+              items={incompleteItems}
+              categoryColor={category.color}
+              activeDragId={activeDragId}
+              allItems={category.items}
+              sensors={sensors}
+              onDragStart={handleItemDragStart}
+              onDragEnd={handleItemDragEnd}
+              onToggleComplete={handleToggleComplete}
+              onToggleFlag={handleToggleFlag}
+              onToggleRecurring={handleToggleRecurring}
+              onDelete={handleDeleteItem}
+              onUpdateText={handleUpdateText}
+              onUpdateDueDate={handleUpdateDueDate}
+            />
+          </div>
         )}
 
         {completedItems.length > 0 && (
@@ -359,7 +330,22 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
                 Completed ({completedItems.length})
               </p>
             </div>
-            <div className="divide-y divide-border/50 opacity-60">{renderRows(completedItems, false)}</div>
+            <div className="divide-y divide-border/50 opacity-60">
+              {completedItems.map(item => (
+                <NoteItemRow
+                  key={item.id}
+                  item={item}
+                  categoryColor={category.color}
+                  sortable={false}
+                  onToggleComplete={() => handleToggleComplete(item.id)}
+                  onToggleFlag={() => handleToggleFlag(item.id)}
+                  onToggleRecurring={() => handleToggleRecurring(item.id)}
+                  onDelete={() => handleDeleteItem(item.id)}
+                  onUpdateText={(text) => handleUpdateText(item.id, text)}
+                  onUpdateDueDate={(date) => handleUpdateDueDate(item.id, date)}
+                />
+              ))}
+            </div>
           </div>
         )}
 
@@ -384,6 +370,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
                 value={newItemText}
                 onChange={(e) => setNewItemText(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)}
                 className={cn(
                   "flex-1 border-0 bg-transparent p-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/50",
                   addingType === "header" ? "text-base font-semibold" : "text-sm"
@@ -504,9 +491,80 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
   )
 }
 
+// ─── SortableItemList — proper component, not a render function ───────────────
+
+interface SortableItemListProps {
+  items: TodoItem[]
+  categoryColor: string
+  activeDragId: string | null
+  allItems: TodoItem[]
+  sensors: ReturnType<typeof useSensors>
+  onDragStart: (e: DragStartEvent) => void
+  onDragEnd: (e: DragEndEvent) => void
+  onToggleComplete: (id: string) => void
+  onToggleFlag: (id: string) => void
+  onToggleRecurring: (id: string) => void
+  onDelete: (id: string) => void
+  onUpdateText: (id: string, text: string) => void
+  onUpdateDueDate: (id: string, date: string) => void
+}
+
+function SortableItemList({
+  items, categoryColor, activeDragId, allItems, sensors,
+  onDragStart, onDragEnd,
+  onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
+  onUpdateText, onUpdateDueDate,
+}: SortableItemListProps) {
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
+      <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+        {items.map(item => (
+          <NoteItemRow
+            key={item.id}
+            item={item}
+            categoryColor={categoryColor}
+            sortable
+            onToggleComplete={() => onToggleComplete(item.id)}
+            onToggleFlag={() => onToggleFlag(item.id)}
+            onToggleRecurring={() => onToggleRecurring(item.id)}
+            onDelete={() => onDelete(item.id)}
+            onUpdateText={(text) => onUpdateText(item.id, text)}
+            onUpdateDueDate={(date) => onUpdateDueDate(item.id, date)}
+          />
+        ))}
+      </SortableContext>
+      <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)" }}>
+        {activeDragId ? (
+          <NoteItemRow
+            item={allItems.find(i => i.id === activeDragId)!}
+            categoryColor={categoryColor}
+            sortable
+            isOverlay
+            onToggleComplete={() => {}}
+            onToggleFlag={() => {}}
+            onToggleRecurring={() => {}}
+            onDelete={() => {}}
+            onUpdateText={() => {}}
+            onUpdateDueDate={() => {}}
+          />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
+// ─── NoteItemRow ──────────────────────────────────────────────────────────────
+
 interface NoteItemRowProps {
   item: TodoItem
   categoryColor: string
+  sortable?: boolean
   isOverlay?: boolean
   onToggleComplete: () => void
   onToggleFlag: () => void
@@ -517,7 +575,7 @@ interface NoteItemRowProps {
 }
 
 function NoteItemRow({
-  item, categoryColor, isOverlay,
+  item, categoryColor, sortable = false, isOverlay,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
   onUpdateText, onUpdateDueDate,
 }: NoteItemRowProps) {
@@ -528,7 +586,7 @@ function NoteItemRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id })
+  } = useSortable({ id: item.id, disabled: !sortable })
 
   const dndStyle = {
     transform: CSS.Transform.toString(transform),
@@ -540,6 +598,8 @@ function NoteItemRow({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [swipeOffset, setSwipeOffset] = useState(0)
   const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
+  const touchIsHorizontal = useRef<boolean | null>(null)
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasVibratedSwipe = useRef(false)
 
@@ -571,29 +631,42 @@ function NoteItemRow({
     }
   }
 
-  // Swipe-to-delete via touch on the row body
+  // Swipe-to-delete — only activates on horizontal swipe, cancels drag
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+    touchIsHorizontal.current = null
     hasVibratedSwipe.current = false
   }
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartX.current === null) return
-    const delta = e.touches[0].clientX - touchStartX.current
-    if (delta < 0) {
-      const newOffset = Math.max(-80, delta)
-      // Vibrate once when threshold is crossed
+    if (touchStartX.current === null || touchStartY.current === null) return
+    const dx = e.touches[0].clientX - touchStartX.current
+    const dy = e.touches[0].clientY - touchStartY.current
+
+    // Determine direction on first significant movement
+    if (touchIsHorizontal.current === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      touchIsHorizontal.current = Math.abs(dx) > Math.abs(dy)
+    }
+
+    // Only handle horizontal swipes — vertical is scroll/drag
+    if (!touchIsHorizontal.current) return
+
+    if (dx < 0) {
+      const newOffset = Math.max(-80, dx)
       if (newOffset <= -40 && !hasVibratedSwipe.current) {
         haptics.medium()
         hasVibratedSwipe.current = true
       }
       setSwipeOffset(newOffset)
     } else if (swipeOffset < 0) {
-      setSwipeOffset(Math.min(0, swipeOffset + delta))
+      setSwipeOffset(Math.min(0, swipeOffset + dx))
     }
   }
   const handleTouchEnd = () => {
     setSwipeOffset(swipeOffset < -40 ? -80 : 0)
     touchStartX.current = null
+    touchStartY.current = null
+    touchIsHorizontal.current = null
   }
 
   const today = new Date().toISOString().split("T")[0]
@@ -623,14 +696,18 @@ function NoteItemRow({
         style={{ transform: `translateX(${swipeOffset}px)` }}
         onClick={() => swipeOffset < 0 ? setSwipeOffset(0) : undefined}
       >
-        {/* Grip handle — dnd-kit listeners, 44px touch target */}
-        <div
-          {...attributes}
-          {...listeners}
-          className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none flex items-center justify-center w-8 h-11 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
-        >
-          <GripVertical className="w-4 h-4" />
-        </div>
+        {/* Grip handle — only shown when sortable */}
+        {sortable ? (
+          <div
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none flex items-center justify-center w-8 h-11 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
+          >
+            <GripVertical className="w-4 h-4" />
+          </div>
+        ) : (
+          <div className="w-2 flex-shrink-0" />
+        )}
 
         {/* Checkbox / indicator — 44px tap target */}
         <div className="flex-shrink-0 flex items-center justify-center w-11 h-11">
