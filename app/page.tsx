@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense, useRef, useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
-import { Flag, List, Moon, Sun, Search, X, GripVertical } from "lucide-react"
+import { Flag, List, Moon, Sun, Search, X, GripVertical, Settings } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import {
@@ -30,6 +30,9 @@ import { FlaggedList } from "@/components/flagged-list"
 import { CategoryCard } from "@/components/category-card"
 import { NoteDetail } from "@/components/note-detail"
 import { CategoryManager } from "@/components/category-manager"
+import { LockScreen, isPinEnabled } from "@/components/pin-lock"
+import { SettingsSheet } from "@/components/settings-sheet"
+import { scheduleDueNotifications } from "@/lib/notifications"
 import { cn } from "@/lib/utils"
 import { haptics } from "@/lib/haptics"
 
@@ -197,6 +200,8 @@ export default function TodoApp() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchActive, setSearchActive] = useState(false)
   const [activeCatId, setActiveCatId] = useState<string | null>(null)
+  const [locked, setLocked] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const { theme, setTheme } = useTheme()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -210,9 +215,36 @@ export default function TodoApp() {
   )
 
   useEffect(() => {
-    setCategories(getCategories())
+    const cats = getCategories()
+    setCategories(cats)
     setMounted(true)
+
+    // PIN lock: show lock screen if PIN is enabled
+    if (isPinEnabled()) {
+      setLocked(true)
+    }
+
+    // Notifications: schedule due-date reminders on mount
+    scheduleDueNotifications(cats)
   }, [])
+
+  // Auto-lock when app goes to background (visibilitychange)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && isPinEnabled()) {
+        setLocked(true)
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [])
+
+  // Re-schedule notifications whenever categories change (new due dates added)
+  useEffect(() => {
+    if (mounted) {
+      scheduleDueNotifications(categories)
+    }
+  }, [categories, mounted])
 
   const handleViewParam = useCallback((view: string | null) => {
     if (view === "notes") setCurrentView("categories")
@@ -344,11 +376,19 @@ export default function TodoApp() {
     )
   }
 
+  // Show lock screen if PIN is enabled and app is locked
+  if (locked) {
+    return <LockScreen onUnlock={() => setLocked(false)} />
+  }
+
   return (
     <div className="min-h-[100dvh] bg-background">
       <Suspense fallback={null}>
         <SearchParamsReader onView={handleViewParam} />
       </Suspense>
+
+      {/* Settings sheet */}
+      <SettingsSheet open={showSettings} onClose={() => setShowSettings(false)} />
 
       <div className="max-w-lg mx-auto min-h-[100dvh] flex flex-col">
         {currentView === "detail" && selectedCategory ? (
@@ -382,6 +422,13 @@ export default function TodoApp() {
                       aria-label="Toggle theme"
                     >
                       {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
+                    <button
+                      onClick={() => { haptics.light(); setShowSettings(true) }}
+                      className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      aria-label="Settings"
+                    >
+                      <Settings className="w-5 h-5" />
                     </button>
                   </div>
                 </div>
