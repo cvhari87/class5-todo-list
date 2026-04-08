@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { generateId } from "@/lib/store"
+import { haptics } from "@/lib/haptics"
 
 const PRESET_COLORS = [
   "#007AFF", "#34C759", "#FF9500", "#FF3B30",
@@ -105,6 +106,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
 
   const commitNewItem = () => {
     if (!addingType || !newItemText.trim()) { setAddingType(null); return }
+    haptics.light()
     const newItem: TodoItem = {
       id: generateId(),
       text: newItemText.trim(),
@@ -125,15 +127,19 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
   }
 
   const handleToggleComplete = (itemId: string) => {
+    const item = category.items.find(i => i.id === itemId)
+    // Haptic: success when completing, light when uncompleting
+    if (item) item.completed ? haptics.light() : haptics.success()
     onUpdateCategory({
       ...category,
-      items: category.items.map(item =>
-        item.id === itemId ? { ...item, completed: !item.completed } : item
+      items: category.items.map(i =>
+        i.id === itemId ? { ...i, completed: !i.completed } : i
       ),
     })
   }
 
   const handleToggleFlag = (itemId: string) => {
+    haptics.medium()
     onUpdateCategory({
       ...category,
       items: category.items.map(item =>
@@ -145,6 +151,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
   const handleDeleteItem = (itemId: string) => {
     const deleted = category.items.find(i => i.id === itemId)
     if (!deleted) return
+    haptics.heavy()
     onUpdateCategory({ ...category, items: category.items.filter(i => i.id !== itemId) })
     toast("Item deleted", {
       action: {
@@ -418,6 +425,7 @@ function NoteItemRow({
   const [swipeOffset, setSwipeOffset] = useState(0)
   const touchStartX = useRef<number | null>(null)
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasVibratedSwipe = useRef(false)
 
   useEffect(() => {
     if (confirmDelete) {
@@ -438,19 +446,34 @@ function NoteItemRow({
   }
 
   const handleDelete = () => {
-    if (confirmDelete) onDelete()
-    else setConfirmDelete(true)
+    if (confirmDelete) {
+      haptics.heavy()
+      onDelete()
+    } else {
+      haptics.medium()
+      setConfirmDelete(true)
+    }
   }
 
   // Swipe-to-delete via touch on the row body
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
+    hasVibratedSwipe.current = false
   }
   const handleTouchMove = (e: React.TouchEvent) => {
     if (touchStartX.current === null) return
     const delta = e.touches[0].clientX - touchStartX.current
-    if (delta < 0) setSwipeOffset(Math.max(-80, delta))
-    else if (swipeOffset < 0) setSwipeOffset(Math.min(0, swipeOffset + delta))
+    if (delta < 0) {
+      const newOffset = Math.max(-80, delta)
+      // Vibrate once when threshold is crossed
+      if (newOffset <= -40 && !hasVibratedSwipe.current) {
+        haptics.medium()
+        hasVibratedSwipe.current = true
+      }
+      setSwipeOffset(newOffset)
+    } else if (swipeOffset < 0) {
+      setSwipeOffset(Math.min(0, swipeOffset + delta))
+    }
   }
   const handleTouchEnd = () => {
     setSwipeOffset(swipeOffset < -40 ? -80 : 0)

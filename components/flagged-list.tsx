@@ -4,6 +4,7 @@ import { Flag, ChevronRight } from "lucide-react"
 import { Category, TodoItem } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
+import { haptics } from "@/lib/haptics"
 
 interface FlaggedListProps {
   flaggedItems: { item: TodoItem; category: Category }[]
@@ -37,6 +38,7 @@ export function FlaggedList({ flaggedItems, onToggleComplete, onSelectItem }: Fl
           <div
             onClick={(e) => {
               e.stopPropagation()
+              haptics.success()
               onToggleComplete(category.id, item.id)
             }}
           >

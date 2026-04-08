@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { Flag, List, Moon, Sun, Search, X } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
@@ -13,6 +14,15 @@ import { CategoryManager } from "@/components/category-manager"
 import { cn } from "@/lib/utils"
 
 type View = "flagged" | "categories" | "detail"
+
+// Separate component to read search params (must be inside Suspense)
+function SearchParamsReader({ onView }: { onView: (view: string | null) => void }) {
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    onView(searchParams.get("view"))
+  }, [searchParams, onView])
+  return null
+}
 
 export default function TodoApp() {
   const [categories, setCategories] = useState<Category[]>([])
@@ -27,6 +37,11 @@ export default function TodoApp() {
     setCategories(getCategories())
     setMounted(true)
   }, [])
+
+  const handleViewParam = (view: string | null) => {
+    if (view === "notes") setCurrentView("categories")
+    else if (view === "flagged") setCurrentView("flagged")
+  }
 
   useEffect(() => {
     if (mounted) {
@@ -115,6 +130,9 @@ export default function TodoApp() {
 
   return (
     <div className="min-h-screen bg-background">
+      <Suspense fallback={null}>
+        <SearchParamsReader onView={handleViewParam} />
+      </Suspense>
       <div className="max-w-lg mx-auto min-h-screen flex flex-col">
         {currentView === "detail" && selectedCategory ? (
           <NoteDetail
@@ -126,7 +144,7 @@ export default function TodoApp() {
         ) : (
           <>
             {/* Header */}
-            <header className="px-4 pt-8 pb-4 bg-background sticky top-0 z-10">
+            <header className="px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-4 bg-background sticky top-0 z-10">
               <div className="flex items-center justify-between mb-6">
                 <h1 className="text-3xl font-bold tracking-tight">
                   {currentView === "flagged" ? "Flagged" : "Notes"}
