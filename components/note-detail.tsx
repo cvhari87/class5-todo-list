@@ -255,28 +255,34 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
     ))
 
   return (
-    <div className="flex flex-col h-full min-h-screen">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
-        <Button variant="ghost" size="icon" onClick={onBack} className="h-9 w-9 rounded-full">
+    <div className="flex flex-col min-h-[100dvh]">
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2 px-2 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+        {/* Back — 44px tap target */}
+        <button
+          onClick={onBack}
+          className="flex items-center justify-center w-11 h-11 rounded-full text-primary active:bg-secondary transition-colors flex-shrink-0"
+          aria-label="Back"
+        >
           <ArrowLeft className="w-5 h-5" />
-        </Button>
+        </button>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">
+          {/* Color dot — tap to change */}
           <div className="relative flex-shrink-0">
             <button
               onClick={() => setShowColorPicker(s => !s)}
-              className="w-4 h-4 rounded-full border-2 border-white/30 shadow-sm"
+              className="w-6 h-6 rounded-full border-2 border-white/30 shadow-sm active:scale-90 transition-transform"
               style={{ backgroundColor: category.color }}
-              title="Change color"
+              aria-label="Change color"
             />
             {showColorPicker && (
-              <div className="absolute top-7 left-0 bg-card rounded-xl shadow-lg border border-border p-3 z-20 flex flex-wrap gap-2 w-48">
+              <div className="absolute top-8 left-0 bg-card rounded-2xl shadow-xl border border-border p-3 z-20 flex flex-wrap gap-2 w-52">
                 {PRESET_COLORS.map(color => (
                   <button
                     key={color}
                     onClick={() => { onUpdateCategory({ ...category, color }); setShowColorPicker(false) }}
-                    className="w-8 h-8 rounded-full transition-transform hover:scale-110"
+                    className="w-10 h-10 rounded-full transition-transform active:scale-90"
                     style={{ backgroundColor: color, boxShadow: category.color === color ? `0 0 0 2px white, 0 0 0 4px ${color}` : undefined }}
                   />
                 ))}
@@ -285,32 +291,46 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
           </div>
 
           {editingTitle ? (
-            <Input autoFocus value={editTitleText} onChange={(e) => setEditTitleText(e.target.value)}
-              onBlur={commitTitleEdit} onKeyDown={handleTitleKeyDown}
-              className="border-0 bg-transparent p-0 h-auto focus-visible:ring-0 text-lg font-semibold" />
+            <Input
+              autoFocus
+              value={editTitleText}
+              onChange={(e) => setEditTitleText(e.target.value)}
+              onBlur={commitTitleEdit}
+              onKeyDown={handleTitleKeyDown}
+              className="border-0 bg-transparent p-0 h-auto focus-visible:ring-0 text-lg font-semibold"
+            />
           ) : (
-            <h1 onClick={() => { setEditTitleText(category.name); setEditingTitle(true) }}
-              className="text-lg font-semibold cursor-pointer hover:opacity-70 transition-opacity truncate">
+            <h1
+              onClick={() => { setEditTitleText(category.name); setEditingTitle(true) }}
+              className="text-lg font-semibold cursor-pointer hover:opacity-70 transition-opacity truncate"
+            >
               {category.name}
             </h1>
           )}
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <span className={cn("text-sm font-medium", todoRemaining === 0 && todoTotal > 0 ? "text-green-500" : "text-muted-foreground")}>
-            {todoTotal === 0 ? "" : todoRemaining === 0 ? "All done" : `${todoRemaining} left`}
-          </span>
-          <Button variant="ghost" size="icon" onClick={handleDeleteNote}
-            className={cn("h-8 w-8 rounded-full transition-colors",
-              confirmDeleteNote ? "text-destructive bg-destructive/10" : "text-muted-foreground/40 hover:text-destructive")}
-            title={confirmDeleteNote ? "Tap again to delete note" : "Delete note"}>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          {todoTotal > 0 && (
+            <span className={cn("text-sm font-medium px-2", todoRemaining === 0 ? "text-green-500" : "text-muted-foreground")}>
+              {todoRemaining === 0 ? "✓ Done" : `${todoRemaining} left`}
+            </span>
+          )}
+          {/* Delete note — 44px tap target */}
+          <button
+            onClick={handleDeleteNote}
+            className={cn(
+              "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
+              confirmDeleteNote ? "text-destructive bg-destructive/10" : "text-muted-foreground/40 hover:text-destructive"
+            )}
+            aria-label={confirmDeleteNote ? "Tap again to delete note" : "Delete note"}
+          >
             <Trash2 className="w-4 h-4" />
-          </Button>
+          </button>
         </div>
       </div>
 
-      {/* Items List */}
-      <div className="flex-1 overflow-auto">
+      {/* ── Items List ── */}
+      <div className="flex-1 overflow-auto pb-[calc(5rem+env(safe-area-inset-bottom))]">
         {incompleteItems.length > 0 && (
           <div className="divide-y divide-border/50">{renderRows(incompleteItems)}</div>
         )}
@@ -341,22 +361,32 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
                 {addingType === "text" && <AlignLeft className="w-4 h-4" />}
                 {addingType === "todo" && <CheckSquare className="w-4 h-4" />}
               </div>
-              <Input autoFocus
+              <Input
+                autoFocus
                 placeholder={addingType === "header" ? "Header text..." : addingType === "text" ? "Note text..." : "Todo item..."}
-                value={newItemText} onChange={(e) => setNewItemText(e.target.value)} onKeyDown={handleKeyDown}
-                className={cn("flex-1 border-0 bg-transparent p-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/50",
-                  addingType === "header" ? "text-base font-semibold" : "text-sm")} />
+                value={newItemText}
+                onChange={(e) => setNewItemText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className={cn(
+                  "flex-1 border-0 bg-transparent p-0 h-auto focus-visible:ring-0 placeholder:text-muted-foreground/50",
+                  addingType === "header" ? "text-base font-semibold" : "text-sm"
+                )}
+              />
               <div className="flex items-center gap-1">
                 <Button variant="ghost" size="sm" onClick={() => { setAddingType(null); setNewItemText("") }}
-                  className="h-8 px-2 text-muted-foreground">Done</Button>
-                <Button size="sm" onClick={commitNewItem} disabled={!newItemText.trim()} className="h-8 px-3">Add</Button>
+                  className="h-9 px-3 text-muted-foreground">Cancel</Button>
+                <Button size="sm" onClick={commitNewItem} disabled={!newItemText.trim()} className="h-9 px-4">Add</Button>
               </div>
             </div>
             {addingType === "todo" && (
               <div className="flex items-center gap-2 px-4 pb-3">
                 <span className="text-xs text-muted-foreground">Due date:</span>
-                <input type="date" value={newItemDueDate} onChange={e => setNewItemDueDate(e.target.value)}
-                  className="text-xs bg-transparent border border-border rounded-lg px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                <input
+                  type="date"
+                  value={newItemDueDate}
+                  onChange={e => setNewItemDueDate(e.target.value)}
+                  className="text-xs bg-transparent border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+                />
                 {newItemDueDate && (
                   <button onClick={() => setNewItemDueDate("")} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
                 )}
@@ -366,22 +396,35 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
         )}
       </div>
 
-      {/* Bottom toolbar */}
-      <div className="sticky bottom-0 border-t border-border bg-card/90 backdrop-blur-sm px-4 py-3">
-        <div className="flex items-center justify-between">
+      {/* ── Sticky Bottom Toolbar ── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-10 border-t border-border bg-card/90 backdrop-blur-xl px-4 pt-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          {/* Sort button */}
           <div className="relative">
-            <button onClick={() => setShowSortMenu(s => !s)}
-              className={cn("flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors",
-                sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary")}>
-              <ArrowUpDown className="w-3 h-3" />
-              {sortLabels[sortOrder]}
+            <button
+              onClick={() => setShowSortMenu(s => !s)}
+              className={cn(
+                "flex items-center gap-1.5 text-sm h-10 px-3 rounded-xl transition-colors",
+                sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+              )}
+            >
+              <ArrowUpDown className="w-4 h-4" />
+              <span className="text-xs">{sortLabels[sortOrder]}</span>
             </button>
             {showSortMenu && (
-              <div className="absolute bottom-10 left-0 bg-card rounded-xl shadow-lg border border-border overflow-hidden w-44 animate-in fade-in slide-in-from-bottom-2 z-10">
+              <div className="absolute bottom-12 left-0 bg-card rounded-2xl shadow-xl border border-border overflow-hidden w-48 animate-in fade-in slide-in-from-bottom-2 z-10">
                 {(["default", "flagged", "incomplete", "alpha"] as SortOrder[]).map(opt => (
-                  <button key={opt} onClick={() => { setSortOrder(opt); setShowSortMenu(false) }}
-                    className={cn("w-full text-left px-4 py-3 text-sm hover:bg-secondary/50 transition-colors border-b border-border last:border-0",
-                      sortOrder === opt && "text-primary font-medium")}>
+                  <button
+                    key={opt}
+                    onClick={() => { setSortOrder(opt); setShowSortMenu(false) }}
+                    className={cn(
+                      "w-full text-left px-4 py-3.5 text-sm hover:bg-secondary/50 transition-colors border-b border-border last:border-0",
+                      sortOrder === opt && "text-primary font-medium"
+                    )}
+                  >
                     {sortLabels[opt]}
                   </button>
                 ))}
@@ -389,20 +432,30 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
             )}
           </div>
 
+          {/* Add button — 48px, prominent */}
           <div className="relative">
-            <Button variant="ghost" size="icon" onClick={() => setAddMenuOpen(prev => !prev)}
-              className="h-9 w-9 rounded-full bg-primary text-primary-foreground hover:bg-primary/90">
-              <Plus className="w-5 h-5" />
-            </Button>
+            <button
+              onClick={() => setAddMenuOpen(prev => !prev)}
+              className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+              aria-label="Add item"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
             {addMenuOpen && (
-              <div className="absolute bottom-12 right-0 bg-card rounded-xl shadow-lg border border-border overflow-hidden w-44 animate-in fade-in slide-in-from-bottom-2">
+              <div className="absolute bottom-14 right-0 bg-card rounded-2xl shadow-xl border border-border overflow-hidden w-48 animate-in fade-in slide-in-from-bottom-2">
                 {[
                   { type: "header" as ItemType, icon: <Heading className="w-4 h-4 text-muted-foreground" />, label: "Header" },
                   { type: "text" as ItemType, icon: <AlignLeft className="w-4 h-4 text-muted-foreground" />, label: "Text" },
                   { type: "todo" as ItemType, icon: <CheckSquare className="w-4 h-4 text-muted-foreground" />, label: "Todo" },
                 ].map(({ type, icon, label }, i, arr) => (
-                  <button key={type} onClick={() => startAdding(type)}
-                    className={cn("flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-secondary/50 transition-colors", i < arr.length - 1 && "border-b border-border")}>
+                  <button
+                    key={type}
+                    onClick={() => startAdding(type)}
+                    className={cn(
+                      "flex items-center gap-3 w-full px-4 py-4 text-sm hover:bg-secondary/50 active:bg-secondary transition-colors",
+                      i < arr.length - 1 && "border-b border-border"
+                    )}
+                  >
                     {icon}<span>{label}</span>
                   </button>
                 ))}
@@ -514,14 +567,16 @@ function NoteItemRow({
       </div>
 
       <div
-        className={cn("flex items-center gap-2 px-2 py-2.5 bg-card transition-all select-none",
-          isDragging && "opacity-40 scale-95")}
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 bg-card transition-all select-none",
+          isDragging && "opacity-40 scale-95"
+        )}
         style={{ transform: `translateX(${swipeOffset}px)` }}
         onClick={() => swipeOffset < 0 ? setSwipeOffset(0) : undefined}
       >
-        {/* Grip handle — grab to drag */}
+        {/* Grip handle — 44px touch target */}
         <div
-          className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none p-1 -ml-1 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
+          className="flex-shrink-0 cursor-grab active:cursor-grabbing touch-none flex items-center justify-center w-8 h-11 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
           onPointerDown={(e) => {
             e.preventDefault()
             onDragStart()
@@ -530,34 +585,52 @@ function NoteItemRow({
           <GripVertical className="w-4 h-4" />
         </div>
 
-        {/* Left indicator */}
-        <div className="flex-shrink-0 flex items-center justify-center w-5">
+        {/* Checkbox / indicator — 44px tap target */}
+        <div className="flex-shrink-0 flex items-center justify-center w-11 h-11">
           {item.type === "todo" && (
-            <div onClick={onToggleComplete} className="cursor-pointer">
-              <Checkbox checked={item.completed} className="h-5 w-5 rounded-full border-2" style={{ borderColor: categoryColor }} />
-            </div>
+            <button
+              onClick={onToggleComplete}
+              className="flex items-center justify-center w-11 h-11 rounded-full active:bg-secondary/50 transition-colors"
+              aria-label={item.completed ? "Mark incomplete" : "Mark complete"}
+            >
+              <Checkbox
+                checked={item.completed}
+                className="h-5 w-5 rounded-full border-2 pointer-events-none"
+                style={{ borderColor: categoryColor }}
+              />
+            </button>
           )}
           {item.type === "header" && <div className="w-1 h-4 rounded-full" style={{ backgroundColor: categoryColor }} />}
           {item.type === "text" && <AlignLeft className="w-3.5 h-3.5 text-muted-foreground/30" />}
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 py-2">
           {editing ? (
-            <Input autoFocus value={editText}
+            <Input
+              autoFocus
+              value={editText}
               onChange={(e) => setEditText(e.target.value)}
-              onBlur={commitEdit} onKeyDown={handleEditKeyDown}
-              className={cn("border-0 bg-transparent p-0 h-auto focus-visible:ring-0",
+              onBlur={commitEdit}
+              onKeyDown={handleEditKeyDown}
+              className={cn(
+                "border-0 bg-transparent p-0 h-auto focus-visible:ring-0",
                 item.type === "header" && "text-base font-semibold",
                 item.type === "text" && "text-sm text-muted-foreground",
-                item.type === "todo" && "text-sm")} />
+                item.type === "todo" && "text-sm"
+              )}
+            />
           ) : (
-            <p onClick={() => { setEditText(item.text); setEditing(true) }}
-              className={cn("cursor-pointer select-none",
+            <p
+              onClick={() => { setEditText(item.text); setEditing(true) }}
+              className={cn(
+                "cursor-pointer select-none leading-snug",
                 item.type === "header" && "text-base font-semibold tracking-tight",
                 item.type === "text" && "text-sm text-muted-foreground leading-relaxed",
                 item.type === "todo" && "text-sm",
-                item.type === "todo" && item.completed && "line-through text-muted-foreground")}>
+                item.type === "todo" && item.completed && "line-through text-muted-foreground"
+              )}
+            >
               {item.text}
             </p>
           )}
@@ -565,20 +638,31 @@ function NoteItemRow({
           {item.type === "todo" && (
             <div className="mt-0.5">
               {editingDate ? (
-                <input autoFocus type="date" defaultValue={item.dueDate ?? ""}
+                <input
+                  autoFocus
+                  type="date"
+                  defaultValue={item.dueDate ?? ""}
                   onBlur={(e) => { onUpdateDueDate(e.target.value); setEditingDate(false) }}
                   onKeyDown={(e) => { if (e.key === "Escape") setEditingDate(false) }}
-                  className="text-xs bg-transparent border border-border rounded px-1 py-0.5 text-foreground focus:outline-none" />
+                  className="text-xs bg-transparent border border-border rounded px-1 py-0.5 text-foreground focus:outline-none"
+                />
               ) : item.dueDate ? (
-                <button onClick={() => setEditingDate(true)}
-                  className={cn("text-xs",
+                <button
+                  onClick={() => setEditingDate(true)}
+                  className={cn(
+                    "text-xs py-0.5",
                     isOverdue && "text-red-500 font-medium",
                     isDueToday && "text-orange-500 font-medium",
-                    !isOverdue && !isDueToday && "text-muted-foreground")}>
+                    !isOverdue && !isDueToday && "text-muted-foreground"
+                  )}
+                >
                   {isOverdue ? "Overdue · " : isDueToday ? "Due today · " : "Due "}{item.dueDate}
                 </button>
               ) : (
-                <button onClick={() => setEditingDate(true)} className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+                <button
+                  onClick={() => setEditingDate(true)}
+                  className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors py-0.5"
+                >
                   + due date
                 </button>
               )}
@@ -586,41 +670,61 @@ function NoteItemRow({
           )}
         </div>
 
-        {/* Right actions */}
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        {/* Right actions — all 44px tap targets */}
+        <div className="flex items-center flex-shrink-0">
           {item.type === "todo" && (
             <>
-              {/* Recurring toggle — 🔄 icon, active = green */}
-              <Button variant="ghost" size="icon" onClick={onToggleRecurring}
-                className={cn("h-8 w-8 rounded-full transition-colors",
+              {/* Recurring toggle — 44px */}
+              <button
+                onClick={onToggleRecurring}
+                className={cn(
+                  "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
                   item.recurring
-                    ? "text-green-500 hover:text-green-600"
-                    : "text-muted-foreground/40 hover:text-muted-foreground")}
-                title={item.recurring ? "Daily goal (tap to remove)" : "Make daily goal"}>
-                <RefreshCw className={cn("w-3.5 h-3.5", item.recurring && "stroke-[2.5]")} />
-              </Button>
-              {/* Flag — only show if not recurring */}
+                    ? "text-green-500 active:bg-green-500/10"
+                    : "text-muted-foreground/30 active:bg-secondary"
+                )}
+                aria-label={item.recurring ? "Remove daily goal" : "Make daily goal"}
+              >
+                <RefreshCw className={cn("w-4 h-4", item.recurring && "stroke-[2.5]")} />
+              </button>
+              {/* Flag — 44px, only if not recurring */}
               {!item.recurring && (
-                <Button variant="ghost" size="icon" onClick={onToggleFlag}
-                  className={cn("h-8 w-8 rounded-full transition-colors",
-                    item.flagged ? "text-accent-foreground" : "text-muted-foreground/40 hover:text-muted-foreground")}
-                  title={item.flagged ? "Unflag" : "Flag"}>
+                <button
+                  onClick={onToggleFlag}
+                  className={cn(
+                    "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
+                    item.flagged
+                      ? "text-amber-500 active:bg-amber-500/10"
+                      : "text-muted-foreground/30 active:bg-secondary"
+                  )}
+                  aria-label={item.flagged ? "Unflag" : "Flag"}
+                >
                   <Flag className={cn("w-4 h-4", item.flagged && "fill-current")} />
-                </Button>
+                </button>
               )}
             </>
           )}
-          <Button variant="ghost" size="icon" onClick={handleDelete}
-            className={cn("h-8 w-8 rounded-full transition-colors",
-              confirmDelete ? "text-destructive bg-destructive/10" : "text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10")}
-            title={confirmDelete ? "Tap again to confirm" : "Delete"}>
+          {/* Delete — 44px */}
+          <button
+            onClick={handleDelete}
+            className={cn(
+              "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
+              confirmDelete
+                ? "text-destructive bg-destructive/10"
+                : "text-muted-foreground/30 active:bg-destructive/10 active:text-destructive"
+            )}
+            aria-label={confirmDelete ? "Tap again to confirm delete" : "Delete item"}
+          >
             <Trash2 className="w-4 h-4" />
-          </Button>
+          </button>
         </div>
       </div>
 
       {swipeOffset <= -80 && (
-        <button className="absolute inset-y-0 right-0 w-20 flex items-center justify-center bg-destructive" onClick={onDelete}>
+        <button
+          className="absolute inset-y-0 right-0 w-20 flex items-center justify-center bg-destructive"
+          onClick={onDelete}
+        >
           <Trash2 className="w-5 h-5 text-white" />
         </button>
       )}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import { Flag, List, Moon, Sun, Search, X, GripVertical } from "lucide-react"
 import { useTheme } from "next-themes"
@@ -92,15 +92,113 @@ function SortableCategoryRow({
   )
 }
 
+// Apple Notes-style search results
+function SearchResults({
+  query,
+  categories,
+  onSelectCategory,
+}: {
+  query: string
+  categories: Category[]
+  onSelectCategory: (id: string) => void
+}) {
+  const q = query.toLowerCase().trim()
+  if (!q) return null
+
+  // Collect all matching items with their category
+  const results: { categoryId: string; categoryName: string; categoryColor: string; itemText: string; itemId: string }[] = []
+  const matchedCategories: Category[] = []
+
+  for (const cat of categories) {
+    const catNameMatch = cat.name.toLowerCase().includes(q)
+    const matchingItems = cat.items.filter(item => item.text.toLowerCase().includes(q))
+
+    if (catNameMatch) matchedCategories.push(cat)
+    for (const item of matchingItems) {
+      results.push({
+        categoryId: cat.id,
+        categoryName: cat.name,
+        categoryColor: cat.color,
+        itemText: item.text,
+        itemId: item.id,
+      })
+    }
+  }
+
+  const totalResults = matchedCategories.length + results.length
+
+  if (totalResults === 0) {
+    return (
+      <div className="px-4 py-10 text-center">
+        <p className="text-muted-foreground text-sm">No results for &ldquo;{query}&rdquo;</p>
+      </div>
+    )
+  }
+
+  // Highlight matching text
+  function highlight(text: string) {
+    const idx = text.toLowerCase().indexOf(q)
+    if (idx === -1) return <span>{text}</span>
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-yellow-200 dark:bg-yellow-800 text-foreground rounded px-0.5">{text.slice(idx, idx + q.length)}</mark>
+        {text.slice(idx + q.length)}
+      </>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1 pb-4">
+      <p className="text-xs text-muted-foreground px-1 mb-1">{totalResults} result{totalResults !== 1 ? "s" : ""}</p>
+
+      {/* Matching note names */}
+      {matchedCategories.map(cat => (
+        <button
+          key={cat.id}
+          onClick={() => { haptics.light(); onSelectCategory(cat.id) }}
+          className="flex items-center gap-3 px-3 py-3 rounded-xl bg-card active:bg-secondary transition-colors text-left"
+        >
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cat.color + "20" }}>
+            <div className="w-4 h-4 rounded-md" style={{ backgroundColor: cat.color }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">{highlight(cat.name)}</p>
+            <p className="text-xs text-muted-foreground">{cat.items.length} item{cat.items.length !== 1 ? "s" : ""}</p>
+          </div>
+        </button>
+      ))}
+
+      {/* Matching items */}
+      {results.map(r => (
+        <button
+          key={r.itemId}
+          onClick={() => { haptics.light(); onSelectCategory(r.categoryId) }}
+          className="flex items-center gap-3 px-3 py-3 rounded-xl bg-card active:bg-secondary transition-colors text-left"
+        >
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: r.categoryColor + "20" }}>
+            <div className="w-4 h-4 rounded-md" style={{ backgroundColor: r.categoryColor }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{highlight(r.itemText)}</p>
+            <p className="text-xs text-muted-foreground">{r.categoryName}</p>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function TodoApp() {
   const [categories, setCategories] = useState<Category[]>([])
   const [currentView, setCurrentView] = useState<View>("flagged")
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const [showSearch, setShowSearch] = useState(false)
+  const [searchActive, setSearchActive] = useState(false)
   const [activeCatId, setActiveCatId] = useState<string | null>(null)
   const { theme, setTheme } = useTheme()
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -116,16 +214,28 @@ export default function TodoApp() {
     setMounted(true)
   }, [])
 
-  const handleViewParam = (view: string | null) => {
+  const handleViewParam = useCallback((view: string | null) => {
     if (view === "notes") setCurrentView("categories")
     else if (view === "flagged") setCurrentView("flagged")
-  }
+  }, [])
 
   useEffect(() => {
     if (mounted) {
       saveCategories(categories)
     }
   }, [categories, mounted])
+
+  const openSearch = () => {
+    setSearchActive(true)
+    setSearchQuery("")
+    setTimeout(() => searchInputRef.current?.focus(), 50)
+  }
+
+  const closeSearch = () => {
+    setSearchActive(false)
+    setSearchQuery("")
+    haptics.light()
+  }
 
   const handleCatDragStart = (event: DragStartEvent) => {
     haptics.medium()
@@ -166,11 +276,13 @@ export default function TodoApp() {
   const handleSelectItem = (categoryId: string, _itemId: string) => {
     setSelectedCategoryId(categoryId)
     setCurrentView("detail")
+    closeSearch()
   }
 
   const handleSelectCategory = (categoryId: string) => {
     setSelectedCategoryId(categoryId)
     setCurrentView("detail")
+    closeSearch()
   }
 
   const handleUpdateCategory = (updatedCategory: Category) => {
@@ -200,13 +312,7 @@ export default function TodoApp() {
   const recurringItems = getRecurringItems(categories)
   const selectedCategory = categories.find(cat => cat.id === selectedCategoryId)
 
-  // Search: filter categories whose name or items match
-  const filteredCategories = searchQuery.trim()
-    ? categories.filter(cat =>
-        cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        cat.items.some(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : categories
+  const sortedCategories = [...categories].sort((a, b) => a.priority - b.priority)
 
   if (!mounted) {
     return (
@@ -217,11 +323,12 @@ export default function TodoApp() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-[100dvh] bg-background">
       <Suspense fallback={null}>
         <SearchParamsReader onView={handleViewParam} />
       </Suspense>
-      <div className="max-w-lg mx-auto min-h-screen flex flex-col">
+
+      <div className="max-w-lg mx-auto min-h-[100dvh] flex flex-col">
         {currentView === "detail" && selectedCategory ? (
           <NoteDetail
             category={selectedCategory}
@@ -231,82 +338,72 @@ export default function TodoApp() {
           />
         ) : (
           <>
-            {/* Header */}
-            <header className="px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-4 bg-background sticky top-0 z-10">
-              <div className="flex items-center justify-between mb-6">
-                <h1 className="text-3xl font-bold tracking-tight">
-                  {currentView === "flagged" ? "Flagged" : "Notes"}
-                </h1>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { setShowSearch(s => !s); setSearchQuery("") }}
-                    className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                  >
-                    {showSearch ? <X className="w-5 h-5" /> : <Search className="w-5 h-5" />}
-                  </button>
-                  <button
-                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                    className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                  >
-                    {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Search input */}
-              {showSearch && (
-                <div className="mb-4 animate-in fade-in slide-in-from-top-1">
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Search notes and items..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl bg-card border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
+            {/* ── Header ── */}
+            <header className="px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 bg-background sticky top-0 z-10">
+              {/* Title row */}
+              {!searchActive && (
+                <div className="flex items-center justify-between mb-3">
+                  <h1 className="text-3xl font-bold tracking-tight">
+                    {currentView === "flagged" ? "Flagged" : "Notes"}
+                  </h1>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={openSearch}
+                      className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      aria-label="Search"
+                    >
+                      <Search className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                      className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      aria-label="Toggle theme"
+                    >
+                      {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* View Toggle */}
-              <div className="flex items-center gap-1 bg-card rounded-xl p-1 shadow-sm self-start">
-                <button
-                  onClick={() => setCurrentView("flagged")}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg transition-all",
-                    currentView === "flagged"
-                      ? "bg-accent/30 text-accent-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Flag className="w-4 h-4" />
-                  <span className="text-sm font-medium">Flagged</span>
-                  {flaggedItems.length > 0 && (
-                    <span className="text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-full font-medium">
-                      {flaggedItems.length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setCurrentView("categories")}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg transition-all",
-                    currentView === "categories"
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <List className="w-4 h-4" />
-                  <span className="text-sm font-medium">Notes</span>
-                  <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full font-medium">
-                    {categories.length}
-                  </span>
-                </button>
-              </div>
+              {/* Apple Notes-style search bar */}
+              {searchActive && (
+                <div className="flex items-center gap-2 mb-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="flex-1 flex items-center gap-2 bg-secondary rounded-xl px-3 h-10">
+                    <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <input
+                      ref={searchInputRef}
+                      type="search"
+                      placeholder="Search"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery("")} className="text-muted-foreground">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    onClick={closeSearch}
+                    className="text-primary text-sm font-medium px-1 py-2 whitespace-nowrap"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </header>
 
-            {/* Content */}
-            <main className="flex-1 px-4 pb-8">
-              {currentView === "flagged" ? (
+            {/* ── Content ── */}
+            <main className="flex-1 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] overflow-y-auto">
+              {/* Search results overlay */}
+              {searchActive ? (
+                <SearchResults
+                  query={searchQuery}
+                  categories={categories}
+                  onSelectCategory={handleSelectCategory}
+                />
+              ) : currentView === "flagged" ? (
                 <div className="bg-card rounded-xl shadow-sm overflow-hidden">
                   <FlaggedList
                     flaggedItems={flaggedItems}
@@ -325,22 +422,18 @@ export default function TodoApp() {
                     onDragEnd={handleCatDragEnd}
                   >
                     <SortableContext
-                      items={filteredCategories
-                        .sort((a, b) => a.priority - b.priority)
-                        .map(c => c.id)}
+                      items={sortedCategories.map(c => c.id)}
                       strategy={verticalListSortingStrategy}
                     >
-                      {filteredCategories
-                        .sort((a, b) => a.priority - b.priority)
-                        .map((category) => (
-                          <SortableCategoryRow
-                            key={category.id}
-                            category={category}
-                            onClick={() => {
-                              if (!activeCatId) handleSelectCategory(category.id)
-                            }}
-                          />
-                        ))}
+                      {sortedCategories.map((category) => (
+                        <SortableCategoryRow
+                          key={category.id}
+                          category={category}
+                          onClick={() => {
+                            if (!activeCatId) handleSelectCategory(category.id)
+                          }}
+                        />
+                      ))}
                     </SortableContext>
 
                     <DragOverlay dropAnimation={{
@@ -357,13 +450,54 @@ export default function TodoApp() {
                     </DragOverlay>
                   </DndContext>
 
-                  {filteredCategories.length === 0 && searchQuery && (
-                    <p className="text-center text-muted-foreground text-sm py-8">No notes match "{searchQuery}"</p>
-                  )}
-                  {!searchQuery && <CategoryManager onAddCategory={handleAddCategory} />}
+                  <CategoryManager onAddCategory={handleAddCategory} />
                 </div>
               )}
             </main>
+
+            {/* ── Bottom Tab Bar ── */}
+            {!searchActive && (
+              <nav
+                className="fixed bottom-0 left-0 right-0 z-20 bg-background/80 backdrop-blur-xl border-t border-border"
+                style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+              >
+                <div className="max-w-lg mx-auto flex">
+                  <button
+                    onClick={() => { haptics.light(); setCurrentView("flagged") }}
+                    className={cn(
+                      "flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors",
+                      currentView === "flagged" ? "text-primary" : "text-muted-foreground"
+                    )}
+                  >
+                    <div className="relative">
+                      <Flag className="w-6 h-6" />
+                      {flaggedItems.length > 0 && (
+                        <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                          {flaggedItems.length}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium">Flagged</span>
+                  </button>
+
+                  <button
+                    onClick={() => { haptics.light(); setCurrentView("categories") }}
+                    className={cn(
+                      "flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors",
+                      currentView === "categories" ? "text-primary" : "text-muted-foreground"
+                    )}
+                  >
+                    <div className="relative">
+                      <List className="w-6 h-6" />
+                      <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 bg-secondary text-secondary-foreground text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                        {categories.length}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-medium">Notes</span>
+                  </button>
+                </div>
+              </nav>
+            )}
           </>
         )}
       </div>
