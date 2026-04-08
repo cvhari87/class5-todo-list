@@ -2,7 +2,7 @@ import { Category, TodoItem } from "./types"
 
 const STORAGE_KEY = "todo-categories"
 const STORAGE_VERSION_KEY = "todo-categories-version"
-const CURRENT_VERSION = 2 // Bump this when data structure changes
+const CURRENT_VERSION = 3 // Bump this when data structure changes
 
 const defaultCategories: Category[] = [
   {
