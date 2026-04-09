@@ -22,34 +22,34 @@ export function CategoryCard({ category, onClick, isDragging }: CategoryCardProp
     <div
       onClick={onClick}
       className={cn(
-        "flex items-center gap-3 px-4 py-4 bg-card rounded-2xl shadow-sm active:scale-[0.98] active:shadow-none transition-all cursor-pointer",
+        "flex items-center gap-4 px-5 py-5 bg-card rounded-2xl shadow-sm active:scale-[0.98] active:shadow-none transition-all cursor-pointer",
         isDragging && "opacity-50"
       )}
-      style={{ minHeight: 72 }}
+      style={{ minHeight: 88 }}
     >
       {/* Color icon */}
       <div
-        className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+        className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: category.color + "20" }}
       >
-        <div className="w-6 h-6 rounded-lg" style={{ backgroundColor: category.color }} />
+        <div className="w-7 h-7 rounded-xl" style={{ backgroundColor: category.color }} />
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-base truncate">{category.name}</p>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span className="text-xs text-muted-foreground">
+        <p className="font-semibold text-lg truncate">{category.name}</p>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <span className="text-sm text-muted-foreground">
             {totalCount === 0 ? "No items" : `${completedCount}/${totalCount} done`}
           </span>
           {flaggedCount > 0 && (
-            <span className="flex items-center gap-0.5 text-xs text-accent-foreground font-medium">
-              <Flag className="w-3 h-3" />
+            <span className="flex items-center gap-0.5 text-sm text-accent-foreground font-medium">
+              <Flag className="w-3.5 h-3.5" />
               {flaggedCount}
             </span>
           )}
           {recurringCount > 0 && (
-            <span className="text-xs text-green-600 font-medium">
+            <span className="text-sm text-green-600 font-medium">
               🔄 {recurringCount} daily
             </span>
           )}
@@ -57,7 +57,7 @@ export function CategoryCard({ category, onClick, isDragging }: CategoryCardProp
 
         {/* Mini progress bar */}
         {totalCount > 0 && (
-          <div className="mt-1.5 h-1 bg-secondary rounded-full overflow-hidden w-full max-w-[120px]">
+          <div className="mt-2 h-1.5 bg-secondary rounded-full overflow-hidden w-full max-w-[140px]">
             <div
               className="h-full rounded-full transition-all duration-300"
               style={{
@@ -71,7 +71,7 @@ export function CategoryCard({ category, onClick, isDragging }: CategoryCardProp
 
       {/* Right side */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        <span className="text-xl font-bold text-muted-foreground/60">{totalCount}</span>
+        <span className="text-2xl font-bold text-muted-foreground/60">{totalCount}</span>
         <ChevronRight className="w-5 h-5 text-muted-foreground/50" />
       </div>
     </div>
