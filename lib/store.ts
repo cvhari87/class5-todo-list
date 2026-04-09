@@ -126,7 +126,7 @@ export function getFlaggedItems(categories: Category[]): { item: TodoItem; categ
   for (const category of sortedCategories) {
     for (const item of category.items) {
       // Flagged = one-time flagged items (not recurring)
-      if (item.type === "todo" && item.flagged && !item.recurring) {
+      if (item.type === "todo" && item.flagged && !item.recurring && !item.completed) {
         flagged.push({ item, category })
       }
     }

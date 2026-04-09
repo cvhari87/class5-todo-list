@@ -43,7 +43,6 @@ import {
   saveCategoryToFirestore,
   deleteCategoryFromFirestore,
   saveAllCategoriesToFirestore,
-  subscribeToCategories,
 } from "@/lib/firestore"
 
 type View = "flagged" | "categories" | "detail"
@@ -247,12 +246,7 @@ export default function TodoApp() {
           saveCategories(firestoreCats)
         }
 
-        // Subscribe to real-time updates
-        if (firestoreUnsub.current) firestoreUnsub.current()
-        firestoreUnsub.current = subscribeToCategories(firebaseUser.uid, (cats) => {
-          setCategories(cats)
-          saveCategories(cats)
-        })
+        // No real-time listener needed for single-user — direct writes are sufficient
 
         if (isPinEnabled()) setLocked(true)
         scheduleDueNotifications(firestoreCats)
