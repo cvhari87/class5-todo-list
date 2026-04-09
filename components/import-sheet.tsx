@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { X, Upload, ChevronRight, Plus, Check, AlertCircle, Type, AlignLeft } from "lucide-react"
+import { X, Upload, ChevronRight, Plus, Check, AlertCircle, Type, AlignLeft, Sparkles, Loader2 } from "lucide-react"
 import { Category, TodoItem, ItemType } from "@/lib/types"
 import { generateId } from "@/lib/store"
 import { parseAppleNotesText, ParsedImportItem } from "@/lib/import-parser"
 import { haptics } from "@/lib/haptics"
 import { cn } from "@/lib/utils"
+import { auth } from "@/lib/firebase"
 
 const PRESET_COLORS = [
   "#007AFF", "#34C759", "#FF9500", "#FF3B30",
@@ -14,6 +15,7 @@ const PRESET_COLORS = [
 ]
 
 type Step = "paste" | "preview" | "assign"
+type ImportMode = "manual" | "ai"
 
 interface ImportSheetProps {
   open: boolean
@@ -44,11 +46,17 @@ function TypeBadge({ type }: { type: ItemType }) {
 
 export function ImportSheet({ open, categories, onClose, onImport, onAddCategory }: ImportSheetProps) {
   const [step, setStep] = useState<Step>("paste")
+  const [importMode, setImportMode] = useState<ImportMode>("ai")
   const [rawText, setRawText] = useState("")
   const [items, setItems] = useState<ParsedImportItem[]>([])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
     categories[0]?.id ?? null
   )
+  // AI suggested category
+  const [aiSuggestedCategory, setAiSuggestedCategory] = useState<string>("")
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+
   // New category inline creation
   const [creatingNew, setCreatingNew] = useState(false)
   const [newCatName, setNewCatName] = useState("")
@@ -62,6 +70,9 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     setNewCatName("")
     setNewCatColor(PRESET_COLORS[0])
     setSelectedCategoryId(categories[0]?.id ?? null)
+    setAiSuggestedCategory("")
+    setAiError(null)
+    setAiLoading(false)
   }, [categories])
 
   const handleClose = () => {
@@ -69,7 +80,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     onClose()
   }
 
-  // ── Step 1 → 2: parse ────────────────────────────────────────────────────
+  // ── Step 1 → 2: manual parse ─────────────────────────────────────────────
   const handleParse = () => {
     if (!rawText.trim()) return
     haptics.light()
@@ -77,6 +88,79 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     if (parsed.length === 0) return
     setItems(parsed)
     setStep("preview")
+  }
+
+  // ── Step 1 → 2: AI auto-categorize ──────────────────────────────────────
+  const handleAiCategorize = async () => {
+    if (!rawText.trim()) return
+    haptics.light()
+    setAiLoading(true)
+    setAiError(null)
+
+    try {
+      // Get Firebase ID token for auth
+      const currentUser = auth.currentUser
+      if (!currentUser) throw new Error("Not signed in")
+      const idToken = await currentUser.getIdToken()
+
+      const res = await fetch("/api/categorize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          text: rawText,
+          existingCategories: categories.map(c => c.name),
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }))
+        throw new Error(err.error ?? `HTTP ${res.status}`)
+      }
+
+      const data = await res.json() as {
+        suggestedCategory: string
+        items: { text: string; type: ItemType; completed: boolean }[]
+      }
+
+      // Map AI response to ParsedImportItem[]
+      let _counter = 0
+      const parsed: ParsedImportItem[] = data.items
+        .filter(i => i.text?.trim())
+        .map(i => ({
+          id: `ai-${Date.now()}-${_counter++}`,
+          text: i.text.trim(),
+          type: i.type ?? "todo",
+          completed: i.completed ?? false,
+          selected: true,
+        }))
+
+      if (parsed.length === 0) throw new Error("No items returned from AI")
+
+      setItems(parsed)
+      setAiSuggestedCategory(data.suggestedCategory ?? "")
+
+      // Pre-select the suggested category if it matches an existing one
+      const match = categories.find(
+        c => c.name.toLowerCase() === data.suggestedCategory?.toLowerCase()
+      )
+      if (match) {
+        setSelectedCategoryId(match.id)
+      } else {
+        // Will create new category with suggested name
+        setSelectedCategoryId(null)
+        setNewCatName(data.suggestedCategory ?? "")
+        setNewCatColor(PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)])
+      }
+
+      setStep("preview")
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI categorization failed")
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   // ── Toggle item selection ────────────────────────────────────────────────
@@ -202,13 +286,62 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
               onChange={e => setRawText(e.target.value)}
               autoFocus
             />
+
+            {/* Mode toggle */}
+            <div className="flex rounded-xl bg-secondary/60 p-1 gap-1 flex-shrink-0">
+              <button
+                onClick={() => setImportMode("ai")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-sm font-medium transition-all",
+                  importMode === "ai"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Auto with AI
+              </button>
+              <button
+                onClick={() => setImportMode("manual")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-sm font-medium transition-all",
+                  importMode === "manual"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Manual
+              </button>
+            </div>
+
+            {aiError && (
+              <div className="flex items-center gap-2 text-destructive text-xs px-1 -mt-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {aiError}
+              </div>
+            )}
+
             <button
-              onClick={handleParse}
-              disabled={!rawText.trim()}
+              onClick={importMode === "ai" ? handleAiCategorize : handleParse}
+              disabled={!rawText.trim() || aiLoading}
               className="w-full h-14 rounded-2xl font-semibold text-base bg-primary text-primary-foreground transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              <ChevronRight className="w-5 h-5" />
-              Preview Items
+              {aiLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Analyzing with AI…
+                </>
+              ) : importMode === "ai" ? (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  Auto-Categorize
+                </>
+              ) : (
+                <>
+                  <ChevronRight className="w-5 h-5" />
+                  Preview Items
+                </>
+              )}
             </button>
           </div>
         )}
@@ -216,9 +349,19 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
         {/* ── STEP 2: Preview ── */}
         {step === "preview" && (
           <div className="flex flex-col flex-1 overflow-hidden px-5 pb-5 gap-3">
+            {/* AI suggestion banner */}
+            {importMode === "ai" && aiSuggestedCategory && (
+              <div className="flex items-center gap-2 bg-primary/10 rounded-xl px-3 py-2 flex-shrink-0">
+                <Sparkles className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                <p className="text-xs text-primary font-medium">
+                  AI suggested: <span className="font-bold">&ldquo;{aiSuggestedCategory}&rdquo;</span>
+                </p>
+              </div>
+            )}
+
             {/* Select all / none */}
             <div className="flex items-center justify-between flex-shrink-0">
-              <p className="text-xs text-muted-foreground">Tap to deselect · Long-press badge to change type</p>
+              <p className="text-xs text-muted-foreground">Tap to deselect · Tap badge to change type</p>
               <div className="flex gap-2">
                 <button
                   onClick={() => { haptics.light(); setItems(p => p.map(i => ({ ...i, selected: true }))) }}
@@ -314,6 +457,45 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
         {/* ── STEP 3: Assign category ── */}
         {step === "assign" && (
           <div className="flex flex-col flex-1 overflow-hidden px-5 pb-5 gap-3">
+            {/* AI suggested new category — show inline creation pre-filled */}
+            {importMode === "ai" && aiSuggestedCategory && !categories.find(c => c.name.toLowerCase() === aiSuggestedCategory.toLowerCase()) && !creatingNew && (
+              <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-3 flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                  <p className="text-xs text-primary font-medium">AI suggests creating a new note:</p>
+                </div>
+                <input
+                  placeholder="Note name…"
+                  value={newCatName}
+                  onChange={e => setNewCatName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleCreateCategory(); if (e.key === "Escape") setNewCatName("") }}
+                  className="w-full bg-transparent text-sm font-medium focus:outline-none placeholder:text-muted-foreground"
+                />
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1.5 flex-1 flex-wrap">
+                    {PRESET_COLORS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => { haptics.light(); setNewCatColor(c) }}
+                        className={cn(
+                          "w-5 h-5 rounded-full transition-transform active:scale-90",
+                          newCatColor === c && "scale-110 ring-2 ring-offset-1 ring-current"
+                        )}
+                        style={{ backgroundColor: c, color: c }}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={handleCreateCategory}
+                    disabled={!newCatName.trim()}
+                    className="text-xs font-semibold text-primary px-3 py-1.5 bg-primary/10 rounded-lg disabled:opacity-40"
+                  >
+                    Create &amp; Select
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto flex flex-col gap-2">
               {/* Existing categories */}
               {categories.map(cat => (
@@ -343,7 +525,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
                 </button>
               ))}
 
-              {/* Create new category inline */}
+              {/* Create new category inline (manual) */}
               {!creatingNew ? (
                 <button
                   onClick={() => { haptics.light(); setCreatingNew(true) }}
