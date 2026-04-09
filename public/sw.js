@@ -1,5 +1,5 @@
 // Service Worker for Priority Notes PWA
-const CACHE_NAME = 'priority-notes-v1';
+const CACHE_NAME = 'priority-notes-v2';
 const RUNTIME_CACHE = 'priority-notes-runtime';
 
 // Assets to cache on install
