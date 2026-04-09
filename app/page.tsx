@@ -284,15 +284,11 @@ export default function TodoApp() {
     else if (view === "flagged") setCurrentView("flagged")
   }, [])
 
-  // Save to localStorage + Firestore whenever categories change
+  // Save to localStorage as offline cache whenever categories change
   useEffect(() => {
     if (!mounted) return
     saveCategories(categories)
-    if (user) {
-      // Save each category individually (Firestore batches automatically)
-      categories.forEach(cat => saveCategoryToFirestore(user.uid, cat))
-    }
-  }, [categories, mounted, user])
+  }, [categories, mounted])
 
   const openSearch = () => {
     setSearchActive(true)
@@ -321,31 +317,34 @@ export default function TodoApp() {
         const oldIndex = sorted.findIndex(c => c.id === active.id)
         const newIndex = sorted.findIndex(c => c.id === over.id)
         const reordered = arrayMove(sorted, oldIndex, newIndex)
-        return reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
+        const updated = reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
+        if (user) updated.forEach(cat => saveCategoryToFirestore(user.uid, cat))
+        return updated
       })
     }
   }
 
   const handleToggleComplete = (categoryId: string, itemId: string) => {
-    setCategories(prev =>
-      prev.map(cat => {
-        if (cat.id === categoryId) {
-          return {
-            ...cat,
-            items: cat.items.map(item => {
-              if (item.id !== itemId) return item
-              const completing = !item.completed
-              return {
-                ...item,
-                completed: completing,
-                lastCompletedDate: completing && item.recurring ? todayString() : item.lastCompletedDate,
-              }
-            }),
-          }
+    setCategories(prev => {
+      const updated = prev.map(cat => {
+        if (cat.id !== categoryId) return cat
+        const updatedCat = {
+          ...cat,
+          items: cat.items.map(item => {
+            if (item.id !== itemId) return item
+            const completing = !item.completed
+            return {
+              ...item,
+              completed: completing,
+              lastCompletedDate: completing && item.recurring ? todayString() : item.lastCompletedDate,
+            }
+          }),
         }
-        return cat
+        if (user) saveCategoryToFirestore(user.uid, updatedCat)
+        return updatedCat
       })
-    )
+      return updated
+    })
   }
 
   const handleSelectItem = (categoryId: string, _itemId: string) => {
@@ -364,10 +363,12 @@ export default function TodoApp() {
     setCategories(prev =>
       prev.map(cat => (cat.id === updatedCategory.id ? updatedCategory : cat))
     )
+    if (user) saveCategoryToFirestore(user.uid, updatedCategory)
   }
 
   const handleAddCategory = (newCategory: Category) => {
     setCategories(prev => [...prev, newCategory])
+    if (user) saveCategoryToFirestore(user.uid, newCategory)
   }
 
   const handleDeleteItem = (categoryId: string, itemId: string) => {
