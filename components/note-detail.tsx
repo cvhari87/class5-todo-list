@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   DndContext,
@@ -787,32 +787,45 @@ function NoteItemRow({
           {item.type === "todo" && (
             <div className="mt-0.5">
               {editingDate ? (
-                <input
-                  autoFocus
-                  type="date"
-                  defaultValue={item.dueDate ?? ""}
-                  onBlur={(e) => { onUpdateDueDate(e.target.value); setEditingDate(false) }}
-                  onKeyDown={(e) => { if (e.key === "Escape") setEditingDate(false) }}
-                  className="text-xs bg-transparent border border-border rounded px-1 py-0.5 text-foreground focus:outline-none"
-                />
+                <div className="flex items-center gap-1">
+                  <input
+                    autoFocus
+                    type="date"
+                    defaultValue={item.dueDate ?? ""}
+                    onBlur={(e) => { onUpdateDueDate(e.target.value); setEditingDate(false) }}
+                    onKeyDown={(e) => { if (e.key === "Escape") setEditingDate(false) }}
+                    className="text-xs bg-transparent border border-border rounded px-1 py-0.5 text-foreground focus:outline-none"
+                  />
+                  {item.dueDate && (
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); onUpdateDueDate(""); setEditingDate(false) }}
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors px-1"
+                      aria-label="Clear due date"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               ) : item.dueDate ? (
                 <button
                   onClick={() => setEditingDate(true)}
                   className={cn(
-                    "text-xs py-0.5",
+                    "flex items-center gap-1 text-xs py-0.5",
                     isOverdue && "text-red-500 font-medium",
                     isDueToday && "text-orange-500 font-medium",
                     !isOverdue && !isDueToday && "text-muted-foreground"
                   )}
                 >
+                  <CalendarDays className="w-3 h-3" />
                   {isOverdue ? "Overdue · " : isDueToday ? "Due today · " : "Due "}{item.dueDate}
                 </button>
               ) : (
                 <button
                   onClick={() => setEditingDate(true)}
-                  className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors py-0.5"
+                  className="flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors py-0.5"
                 >
-                  + due date
+                  <CalendarDays className="w-3 h-3" />
+                  <span>Add due date</span>
                 </button>
               )}
             </div>

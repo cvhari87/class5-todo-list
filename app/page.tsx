@@ -25,7 +25,7 @@ import {
 import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers"
 import { CSS } from "@dnd-kit/utilities"
 import { Category } from "@/lib/types"
-import { getCategories, saveCategories, getFlaggedItems, getRecurringItems } from "@/lib/store"
+import { getCategories, saveCategories, getFlaggedItems, getRecurringItems, todayString } from "@/lib/store"
 import { FlaggedList } from "@/components/flagged-list"
 import { CategoryCard } from "@/components/category-card"
 import { NoteDetail } from "@/components/note-detail"
@@ -295,9 +295,15 @@ export default function TodoApp() {
         if (cat.id === categoryId) {
           return {
             ...cat,
-            items: cat.items.map(item =>
-              item.id === itemId ? { ...item, completed: !item.completed } : item
-            ),
+            items: cat.items.map(item => {
+              if (item.id !== itemId) return item
+              const completing = !item.completed
+              return {
+                ...item,
+                completed: completing,
+                lastCompletedDate: completing && item.recurring ? todayString() : item.lastCompletedDate,
+              }
+            }),
           }
         }
         return cat
