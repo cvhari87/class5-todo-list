@@ -370,6 +370,26 @@ export default function TodoApp() {
     setCategories(prev => [...prev, newCategory])
   }
 
+  const handleDeleteItem = (categoryId: string, itemId: string) => {
+    const cat = categories.find(c => c.id === categoryId)
+    if (!cat) return
+    const deleted = cat.items.find(i => i.id === itemId)
+    if (!deleted) return
+    const updatedCat = { ...cat, items: cat.items.filter(i => i.id !== itemId) }
+    setCategories(prev => prev.map(c => c.id === categoryId ? updatedCat : c))
+    if (user) saveCategoryToFirestore(user.uid, updatedCat)
+    toast("Item deleted", {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const restored = { ...updatedCat, items: [...updatedCat.items, deleted] }
+          setCategories(prev => prev.map(c => c.id === categoryId ? restored : c))
+          if (user) saveCategoryToFirestore(user.uid, restored)
+        },
+      },
+    })
+  }
+
   const handleDeleteCategory = (categoryId: string) => {
     const deleted = categories.find(c => c.id === categoryId)
     if (!deleted) return
@@ -536,6 +556,7 @@ export default function TodoApp() {
                     recurringItems={filteredRecurringItems}
                     onToggleComplete={handleToggleComplete}
                     onSelectItem={handleSelectItem}
+                    onDeleteItem={handleDeleteItem}
                     searchQuery={searchActive ? searchQuery : ""}
                   />
                 </div>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Flag, ChevronRight, GripVertical, RefreshCw, CheckCircle2, ChevronDown } from "lucide-react"
+import { Flag, GripVertical, RefreshCw, CheckCircle2, ChevronDown, Trash2 } from "lucide-react"
 import {
   DndContext,
   closestCenter,
@@ -36,6 +36,7 @@ interface FlaggedListProps {
   recurringItems: FlaggedItem[]
   onToggleComplete: (categoryId: string, itemId: string) => void
   onSelectItem: (categoryId: string, itemId: string) => void
+  onDeleteItem: (categoryId: string, itemId: string) => void
   searchQuery?: string
 }
 
@@ -49,12 +50,13 @@ interface SortableRowProps {
   fi: FlaggedItem
   onToggleComplete: (categoryId: string, itemId: string) => void
   onSelectItem: (categoryId: string, itemId: string) => void
+  onDeleteItem?: (categoryId: string, itemId: string) => void
   isDragging?: boolean
   isOverlay?: boolean
   showRecurringIcon?: boolean
 }
 
-function SortableRow({ fi, onToggleComplete, onSelectItem, isDragging, isOverlay, showRecurringIcon }: SortableRowProps) {
+function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragging, isOverlay, showRecurringIcon }: SortableRowProps) {
   const key = itemKey(fi)
   const { item, category } = fi
 
@@ -95,9 +97,15 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, isDragging, isOverlay
 
       {showRecurringIcon
         ? <RefreshCw className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-        : <Flag className="w-4 h-4 text-accent-foreground flex-shrink-0" />
+        : <Flag className="w-4 h-4 text-amber-500 fill-current flex-shrink-0" />
       }
-      <ChevronRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
+      <button
+        onClick={(e) => { e.stopPropagation(); haptics.heavy(); onDeleteItem?.(category.id, item.id) }}
+        className="flex items-center justify-center w-9 h-9 rounded-full active:bg-destructive/10 active:text-destructive text-muted-foreground/30 transition-colors flex-shrink-0"
+        aria-label="Delete"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
     </div>
   )
 }
@@ -109,10 +117,11 @@ interface SortableSectionProps {
   onReorder: (items: FlaggedItem[]) => void
   onToggleComplete: (categoryId: string, itemId: string) => void
   onSelectItem: (categoryId: string, itemId: string) => void
+  onDeleteItem?: (categoryId: string, itemId: string) => void
   showRecurringIcon?: boolean
 }
 
-function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, showRecurringIcon }: SortableSectionProps) {
+function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, onDeleteItem, showRecurringIcon }: SortableSectionProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
@@ -142,6 +151,7 @@ function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, sho
         {items.map(fi => (
           <SortableRow key={itemKey(fi)} fi={fi}
             onToggleComplete={onToggleComplete} onSelectItem={onSelectItem}
+            onDeleteItem={onDeleteItem}
             isDragging={!!activeId} showRecurringIcon={showRecurringIcon} />
         ))}
       </SortableContext>
@@ -156,7 +166,7 @@ function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, sho
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, onSelectItem, searchQuery = "" }: FlaggedListProps) {
+export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, onSelectItem, onDeleteItem, searchQuery = "" }: FlaggedListProps) {
   const [orderedFlagged, setOrderedFlagged] = useState<FlaggedItem[]>(flaggedItems)
   const [orderedRecurring, setOrderedRecurring] = useState<FlaggedItem[]>(recurringItems)
   const [showCompletedToday, setShowCompletedToday] = useState(true)
@@ -321,6 +331,7 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
             onReorder={setOrderedFlagged}
             onToggleComplete={onToggleComplete}
             onSelectItem={onSelectItem}
+            onDeleteItem={onDeleteItem}
           />
         </div>
       )}
