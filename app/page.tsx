@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense, useRef, useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
-import { Flag, List, Moon, Sun, Search, X, GripVertical, Settings } from "lucide-react"
+import { Flag, List, Moon, Sun, Search, X, GripVertical, Settings, Archive, RefreshCw, Upload } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import {
@@ -25,14 +25,16 @@ import {
 import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers"
 import { CSS } from "@dnd-kit/utilities"
 import { Category } from "@/lib/types"
-import { getCategories, saveCategories, getFlaggedItems, getRecurringItems, todayString } from "@/lib/store"
+import { getCategories, saveCategories, getFlaggedItems, getRecurringItems, getArchivedItems, todayString, resetRecurringItems } from "@/lib/store"
 import { FlaggedList } from "@/components/flagged-list"
+import { ArchiveList } from "@/components/archive-list"
 import { CategoryCard } from "@/components/category-card"
 import { NoteDetail } from "@/components/note-detail"
 import { CategoryManager } from "@/components/category-manager"
 import { LockScreen, isPinEnabled } from "@/components/pin-lock"
 import { SettingsSheet } from "@/components/settings-sheet"
 import { AuthScreen } from "@/components/auth-screen"
+import { ImportSheet } from "@/components/import-sheet"
 import { scheduleDueNotifications } from "@/lib/notifications"
 import { cn } from "@/lib/utils"
 import { haptics } from "@/lib/haptics"
@@ -45,7 +47,7 @@ import {
   saveAllCategoriesToFirestore,
 } from "@/lib/firestore"
 
-type View = "flagged" | "categories" | "detail"
+type View = "flagged" | "categories" | "archive" | "detail"
 
 // Separate component to read search params (must be inside Suspense)
 function SearchParamsReader({ onView }: { onView: (view: string | null) => void }) {
@@ -104,30 +106,48 @@ function SortableCategoryRow({
   )
 }
 
-// Apple Notes-style search results
+// ─── Universal search results (searches across ALL tabs) ─────────────────────
+
+type SearchResultItem = {
+  kind: "note" | "flagged" | "recurring" | "archived"
+  categoryId: string
+  categoryName: string
+  categoryColor: string
+  itemText: string
+  itemId: string
+}
+
 function SearchResults({
   query,
   categories,
   onSelectCategory,
+  onNavigateToTab,
 }: {
   query: string
   categories: Category[]
   onSelectCategory: (id: string) => void
+  onNavigateToTab: (tab: "flagged" | "archive") => void
 }) {
   const q = query.toLowerCase().trim()
   if (!q) return null
 
-  // Collect all matching items with their category
-  const results: { categoryId: string; categoryName: string; categoryColor: string; itemText: string; itemId: string }[] = []
   const matchedCategories: Category[] = []
+  const itemResults: SearchResultItem[] = []
 
   for (const cat of categories) {
-    const catNameMatch = cat.name.toLowerCase().includes(q)
-    const matchingItems = cat.items.filter(item => item.text.toLowerCase().includes(q))
+    if (cat.name.toLowerCase().includes(q)) matchedCategories.push(cat)
 
-    if (catNameMatch) matchedCategories.push(cat)
-    for (const item of matchingItems) {
-      results.push({
+    for (const item of cat.items) {
+      if (!item.text.toLowerCase().includes(q)) continue
+      if (item.type !== "todo") continue
+
+      let kind: SearchResultItem["kind"] = "note"
+      if (item.archived) kind = "archived"
+      else if (item.recurring) kind = "recurring"
+      else if (item.flagged) kind = "flagged"
+
+      itemResults.push({
+        kind,
         categoryId: cat.id,
         categoryName: cat.name,
         categoryColor: cat.color,
@@ -137,7 +157,7 @@ function SearchResults({
     }
   }
 
-  const totalResults = matchedCategories.length + results.length
+  const totalResults = matchedCategories.length + itemResults.length
 
   if (totalResults === 0) {
     return (
@@ -147,7 +167,6 @@ function SearchResults({
     )
   }
 
-  // Highlight matching text
   function highlight(text: string) {
     const idx = text.toLowerCase().indexOf(q)
     if (idx === -1) return <span>{text}</span>
@@ -160,11 +179,18 @@ function SearchResults({
     )
   }
 
+  function KindBadge({ kind }: { kind: SearchResultItem["kind"] }) {
+    if (kind === "flagged") return <Flag className="w-3 h-3 text-amber-500 fill-current flex-shrink-0" />
+    if (kind === "recurring") return <RefreshCw className="w-3 h-3 text-green-500 flex-shrink-0" />
+    if (kind === "archived") return <Archive className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+    return null
+  }
+
   return (
     <div className="flex flex-col gap-1 pb-4">
       <p className="text-xs text-muted-foreground px-1 mb-1">{totalResults} result{totalResults !== 1 ? "s" : ""}</p>
 
-      {/* Matching note names */}
+      {/* Matching note/category names */}
       {matchedCategories.map(cat => (
         <button
           key={cat.id}
@@ -178,14 +204,24 @@ function SearchResults({
             <p className="text-sm font-semibold">{highlight(cat.name)}</p>
             <p className="text-xs text-muted-foreground">{cat.items.length} item{cat.items.length !== 1 ? "s" : ""}</p>
           </div>
+          <List className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
         </button>
       ))}
 
-      {/* Matching items */}
-      {results.map(r => (
+      {/* Matching items across all tabs */}
+      {itemResults.map(r => (
         <button
-          key={r.itemId}
-          onClick={() => { haptics.light(); onSelectCategory(r.categoryId) }}
+          key={`${r.categoryId}-${r.itemId}`}
+          onClick={() => {
+            haptics.light()
+            if (r.kind === "flagged" || r.kind === "recurring") {
+              onNavigateToTab("flagged")
+            } else if (r.kind === "archived") {
+              onNavigateToTab("archive")
+            } else {
+              onSelectCategory(r.categoryId)
+            }
+          }}
           className="flex items-center gap-3 px-3 py-3 rounded-xl bg-card active:bg-secondary transition-colors text-left"
         >
           <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: r.categoryColor + "20" }}>
@@ -195,6 +231,7 @@ function SearchResults({
             <p className="text-sm font-medium truncate">{highlight(r.itemText)}</p>
             <p className="text-xs text-muted-foreground">{r.categoryName}</p>
           </div>
+          <KindBadge kind={r.kind} />
         </button>
       ))}
     </div>
@@ -211,6 +248,7 @@ export default function TodoApp() {
   const [activeCatId, setActiveCatId] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const { theme, setTheme } = useTheme()
@@ -219,12 +257,8 @@ export default function TodoApp() {
   const userRef = useRef<User | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   )
 
   // Auth state listener
@@ -235,25 +269,24 @@ export default function TodoApp() {
       setAuthChecked(true)
 
       if (firebaseUser) {
-        // Load from Firestore, migrate localStorage data if needed
         const firestoreCats = await loadCategoriesFromFirestore(firebaseUser.uid)
         if (firestoreCats.length === 0) {
-          // First sign-in: migrate existing localStorage data to Firestore
           const localCats = getCategories()
           await saveAllCategoriesToFirestore(firebaseUser.uid, localCats)
           setCategories(localCats)
           saveCategories(localCats)
         } else {
-          setCategories(firestoreCats)
-          saveCategories(firestoreCats)
+          const { categories: resetCats, changed } = resetRecurringItems(firestoreCats)
+          if (changed) {
+            await saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
+          }
+          setCategories(resetCats)
+          saveCategories(resetCats)
         }
-
-        // No real-time listener needed for single-user — direct writes are sufficient
 
         if (isPinEnabled()) setLocked(true)
         scheduleDueNotifications(firestoreCats)
       } else {
-        // Not signed in — fall back to localStorage
         if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
         const cats = getCategories()
         setCategories(cats)
@@ -265,12 +298,10 @@ export default function TodoApp() {
     return () => { unsub(); if (firestoreUnsub.current) firestoreUnsub.current() }
   }, [])
 
-  // Auto-lock when app goes to background (visibilitychange)
+  // Auto-lock when app goes to background
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden && isPinEnabled()) {
-        setLocked(true)
-      }
+      if (document.hidden && isPinEnabled()) setLocked(true)
     }
     document.addEventListener("visibilitychange", handleVisibilityChange)
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
@@ -284,9 +315,10 @@ export default function TodoApp() {
   const handleViewParam = useCallback((view: string | null) => {
     if (view === "notes") setCurrentView("categories")
     else if (view === "flagged") setCurrentView("flagged")
+    else if (view === "archive") setCurrentView("archive")
   }, [])
 
-  // Save to localStorage as offline cache whenever categories change
+  // Save to localStorage as offline cache
   useEffect(() => {
     if (!mounted) return
     saveCategories(categories)
@@ -320,7 +352,7 @@ export default function TodoApp() {
         const newIndex = sorted.findIndex(c => c.id === over.id)
         const reordered = arrayMove(sorted, oldIndex, newIndex)
         const updated = reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
-        if (userRef.current) updated.forEach(cat => saveCategoryToFirestore(userRef.current.uid, cat))
+        if (userRef.current) updated.forEach(cat => saveCategoryToFirestore(userRef.current!.uid, cat))
         return updated
       })
     }
@@ -361,10 +393,21 @@ export default function TodoApp() {
     closeSearch()
   }
 
+  const handleImportItems = (categoryId: string, newItems: import("@/lib/types").TodoItem[]) => {
+    setCategories(prev => {
+      const updated = prev.map(cat => {
+        if (cat.id !== categoryId) return cat
+        const updatedCat = { ...cat, items: [...cat.items, ...newItems] }
+        if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCat)
+        return updatedCat
+      })
+      return updated
+    })
+    toast(`Imported ${newItems.length} item${newItems.length !== 1 ? "s" : ""}`)
+  }
+
   const handleUpdateCategory = (updatedCategory: Category) => {
-    setCategories(prev =>
-      prev.map(cat => (cat.id === updatedCategory.id ? updatedCategory : cat))
-    )
+    setCategories(prev => prev.map(cat => cat.id === updatedCategory.id ? updatedCategory : cat))
     if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCategory)
   }
 
@@ -410,8 +453,71 @@ export default function TodoApp() {
     })
   }
 
+  // Archive a completed flagged item → set archived: true
+  const handleArchiveItem = (categoryId: string, itemId: string) => {
+    setCategories(prev => {
+      const updated = prev.map(cat => {
+        if (cat.id !== categoryId) return cat
+        const updatedCat = {
+          ...cat,
+          items: cat.items.map(item =>
+            item.id === itemId ? { ...item, archived: true } : item
+          ),
+        }
+        if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCat)
+        return updatedCat
+      })
+      return updated
+    })
+    toast("Item archived", {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setCategories(prev => {
+            const restored = prev.map(cat => {
+              if (cat.id !== categoryId) return cat
+              const restoredCat = {
+                ...cat,
+                items: cat.items.map(item =>
+                  item.id === itemId ? { ...item, archived: false } : item
+                ),
+              }
+              if (userRef.current) saveCategoryToFirestore(userRef.current.uid, restoredCat)
+              return restoredCat
+            })
+            return restored
+          })
+        },
+      },
+    })
+  }
+
+  // Unarchive → set archived: false, completed: false (back to active flagged)
+  const handleUnarchiveItem = (categoryId: string, itemId: string) => {
+    setCategories(prev => {
+      const updated = prev.map(cat => {
+        if (cat.id !== categoryId) return cat
+        const updatedCat = {
+          ...cat,
+          items: cat.items.map(item =>
+            item.id === itemId ? { ...item, archived: false, completed: false } : item
+          ),
+        }
+        if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCat)
+        return updatedCat
+      })
+      return updated
+    })
+    toast("Item restored to Flagged")
+  }
+
   const flaggedItems = useMemo(() => getFlaggedItems(categories), [categories])
   const recurringItems = useMemo(() => getRecurringItems(categories), [categories])
+  const archivedItems = useMemo(() => getArchivedItems(categories), [categories])
+
+  // All-time archived count: items that are flagged + archived (currently in archive)
+  // We use archivedItems.length as the "ever archived" proxy since items stay archived
+  const totalArchivedEver = useMemo(() => archivedItems.length, [archivedItems])
   const selectedCategory = useMemo(
     () => categories.find(cat => cat.id === selectedCategoryId),
     [categories, selectedCategoryId]
@@ -421,7 +527,6 @@ export default function TodoApp() {
     [categories]
   )
 
-  // Search: filter flagged + recurring items when in Flagged view
   const filteredFlaggedItems = useMemo(() => {
     if (!searchQuery.trim()) return flaggedItems
     const q = searchQuery.toLowerCase()
@@ -438,6 +543,44 @@ export default function TodoApp() {
     )
   }, [recurringItems, searchQuery])
 
+  const filteredArchivedItems = useMemo(() => {
+    if (!searchQuery.trim()) return archivedItems
+    const q = searchQuery.toLowerCase()
+    return archivedItems.filter(
+      ai => ai.item.text.toLowerCase().includes(q) || ai.category.name.toLowerCase().includes(q)
+    )
+  }, [archivedItems, searchQuery])
+
+  // Badge: only count active (incomplete) flagged items
+  const activeFlaggedCount = useMemo(
+    () => flaggedItems.filter(fi => !fi.item.completed).length,
+    [flaggedItems]
+  )
+
+  // Archive all completed flagged items at once
+  const handleArchiveAllCompleted = () => {
+    setCategories(prev => {
+      const updated = prev.map(cat => {
+        const hasCompletedFlagged = cat.items.some(
+          item => item.flagged && item.completed && !item.archived && !item.recurring
+        )
+        if (!hasCompletedFlagged) return cat
+        const updatedCat = {
+          ...cat,
+          items: cat.items.map(item =>
+            item.flagged && item.completed && !item.archived && !item.recurring
+              ? { ...item, archived: true }
+              : item
+          ),
+        }
+        if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCat)
+        return updatedCat
+      })
+      return updated
+    })
+    toast("All completed items archived")
+  }
+
   if (!authChecked || !mounted) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -446,15 +589,18 @@ export default function TodoApp() {
     )
   }
 
-  // Not signed in → show auth screen
   if (!user) {
     return <AuthScreen onSignedIn={() => {}} />
   }
 
-  // Show lock screen if PIN is enabled and app is locked
   if (locked) {
     return <LockScreen onUnlock={() => setLocked(false)} />
   }
+
+  const headerTitle =
+    currentView === "flagged" ? "Flagged"
+    : currentView === "archive" ? "Archive"
+    : "Notes"
 
   return (
     <div className="min-h-[100dvh] bg-background">
@@ -462,7 +608,14 @@ export default function TodoApp() {
         <SearchParamsReader onView={handleViewParam} />
       </Suspense>
 
-      {/* Settings sheet */}
+      <ImportSheet
+        open={showImport}
+        categories={categories}
+        onClose={() => setShowImport(false)}
+        onImport={handleImportItems}
+        onAddCategory={handleAddCategory}
+      />
+
       <SettingsSheet
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -482,13 +635,19 @@ export default function TodoApp() {
           <>
             {/* ── Header ── */}
             <header className="px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 bg-background sticky top-0 z-10">
-              {/* Title row */}
               {!searchActive && (
                 <div className="flex items-center justify-between mb-3">
-                  <h1 className="text-3xl font-bold tracking-tight">
-                    {currentView === "flagged" ? "Flagged" : "Notes"}
-                  </h1>
+                  <h1 className="text-3xl font-bold tracking-tight">{headerTitle}</h1>
                   <div className="flex items-center gap-1">
+                    {currentView === "categories" && (
+                      <button
+                        onClick={() => { haptics.light(); setShowImport(true) }}
+                        className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        aria-label="Import from Apple Notes"
+                      >
+                        <Upload className="w-5 h-5" />
+                      </button>
+                    )}
                     <button
                       onClick={openSearch}
                       className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -514,7 +673,6 @@ export default function TodoApp() {
                 </div>
               )}
 
-              {/* Apple Notes-style search bar */}
               {searchActive && (
                 <div className="flex items-center gap-2 mb-3 animate-in fade-in slide-in-from-top-1 duration-150">
                   <div className="flex-1 flex items-center gap-2 bg-secondary rounded-xl px-3 h-10">
@@ -545,12 +703,15 @@ export default function TodoApp() {
 
             {/* ── Content ── */}
             <main className="flex-1 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] overflow-y-auto">
-              {/* Search active on Notes tab → full search results */}
-              {searchActive && currentView !== "flagged" ? (
+              {searchActive ? (
                 <SearchResults
                   query={searchQuery}
                   categories={categories}
                   onSelectCategory={handleSelectCategory}
+                  onNavigateToTab={(tab) => {
+                    setCurrentView(tab)
+                    closeSearch()
+                  }}
                 />
               ) : currentView === "flagged" ? (
                 <div className="bg-card rounded-xl shadow-sm overflow-hidden">
@@ -560,6 +721,17 @@ export default function TodoApp() {
                     onToggleComplete={handleToggleComplete}
                     onSelectItem={handleSelectItem}
                     onDeleteItem={handleDeleteItem}
+                    onArchiveItem={handleArchiveItem}
+                    onArchiveAllCompleted={handleArchiveAllCompleted}
+                    searchQuery={searchActive ? searchQuery : ""}
+                  />
+                </div>
+              ) : currentView === "archive" ? (
+                <div className="bg-card rounded-xl shadow-sm overflow-hidden">
+                  <ArchiveList
+                    archivedItems={filteredArchivedItems}
+                    totalArchivedEver={totalArchivedEver}
+                    onUnarchiveItem={handleUnarchiveItem}
                     searchQuery={searchActive ? searchQuery : ""}
                   />
                 </div>
@@ -587,10 +759,7 @@ export default function TodoApp() {
                       ))}
                     </SortableContext>
 
-                    <DragOverlay dropAnimation={{
-                      duration: 200,
-                      easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
-                    }}>
+                    <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)" }}>
                       {activeCatId ? (
                         <SortableCategoryRow
                           category={categories.find(c => c.id === activeCatId)!}
@@ -623,6 +792,7 @@ export default function TodoApp() {
                 style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
               >
                 <div className="max-w-lg mx-auto flex">
+                  {/* Flagged tab */}
                   <button
                     onClick={() => { haptics.light(); setCurrentView("flagged") }}
                     className={cn(
@@ -632,15 +802,16 @@ export default function TodoApp() {
                   >
                     <div className="relative">
                       <Flag className="w-6 h-6" />
-                      {flaggedItems.length > 0 && (
+                      {activeFlaggedCount > 0 && (
                         <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
-                          {flaggedItems.length}
+                          {activeFlaggedCount}
                         </span>
                       )}
                     </div>
                     <span className="text-[10px] font-medium">Flagged</span>
                   </button>
 
+                  {/* Notes tab */}
                   <button
                     onClick={() => { haptics.light(); setCurrentView("categories") }}
                     className={cn(
@@ -655,6 +826,25 @@ export default function TodoApp() {
                       </span>
                     </div>
                     <span className="text-[10px] font-medium">Notes</span>
+                  </button>
+
+                  {/* Archive tab */}
+                  <button
+                    onClick={() => { haptics.light(); setCurrentView("archive") }}
+                    className={cn(
+                      "flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors",
+                      currentView === "archive" ? "text-primary" : "text-muted-foreground"
+                    )}
+                  >
+                    <div className="relative">
+                      <Archive className="w-6 h-6" />
+                      {archivedItems.length > 0 && (
+                        <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 bg-secondary text-secondary-foreground text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                          {archivedItems.length}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium">Archive</span>
                   </button>
                 </div>
               </nav>

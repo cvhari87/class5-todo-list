@@ -2,7 +2,7 @@ import { Category, TodoItem } from "./types"
 
 const STORAGE_KEY = "todo-categories"
 const STORAGE_VERSION_KEY = "todo-categories-version"
-const CURRENT_VERSION = 4 // Bumped: added recurring + lastCompletedDate fields
+const CURRENT_VERSION = 5 // Bumped: added archived field
 
 export function todayString(): string {
   return new Date().toISOString().split("T")[0] // "YYYY-MM-DD"
@@ -53,7 +53,7 @@ const defaultCategories: Category[] = [
  * Reset recurring items that were completed on a previous day.
  * Called on every app load — safe to call multiple times per day.
  */
-function resetRecurringItems(categories: Category[]): { categories: Category[]; changed: boolean } {
+export function resetRecurringItems(categories: Category[]): { categories: Category[]; changed: boolean } {
   const today = todayString()
   let changed = false
 
@@ -125,14 +125,29 @@ export function getFlaggedItems(categories: Category[]): { item: TodoItem; categ
 
   for (const category of sortedCategories) {
     for (const item of category.items) {
-      // Flagged = one-time flagged items (not recurring)
-      if (item.type === "todo" && item.flagged && !item.recurring && !item.completed) {
+      // Active flagged = flagged, not recurring, not archived
+      if (item.type === "todo" && item.flagged && !item.recurring && !item.archived) {
         flagged.push({ item, category })
       }
     }
   }
 
   return flagged
+}
+
+export function getArchivedItems(categories: Category[]): { item: TodoItem; category: Category }[] {
+  const archived: { item: TodoItem; category: Category }[] = []
+  const sortedCategories = [...categories].sort((a, b) => a.priority - b.priority)
+
+  for (const category of sortedCategories) {
+    for (const item of category.items) {
+      if (item.type === "todo" && item.flagged && item.archived) {
+        archived.push({ item, category })
+      }
+    }
+  }
+
+  return archived
 }
 
 export function getRecurringItems(categories: Category[]): { item: TodoItem; category: Category }[] {

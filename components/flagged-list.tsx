@@ -1,7 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Flag, GripVertical, RefreshCw, CheckCircle2, ChevronDown, Trash2 } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import {
+  Flag, GripVertical, RefreshCw, CheckCircle2, ChevronDown,
+  Trash2, Archive, AlertCircle, ArrowUpDown, SlidersHorizontal,
+} from "lucide-react"
 import {
   DndContext,
   closestCenter,
@@ -31,17 +34,165 @@ interface FlaggedItem {
   category: Category
 }
 
+type SortMode = "manual" | "category" | "oldest" | "newest"
+
 interface FlaggedListProps {
   flaggedItems: FlaggedItem[]
   recurringItems: FlaggedItem[]
   onToggleComplete: (categoryId: string, itemId: string) => void
   onSelectItem: (categoryId: string, itemId: string) => void
   onDeleteItem: (categoryId: string, itemId: string) => void
+  onArchiveItem: (categoryId: string, itemId: string) => void
+  onArchiveAllCompleted: () => void
   searchQuery?: string
 }
 
 function itemKey(fi: FlaggedItem) {
   return `${fi.category.id}-${fi.item.id}`
+}
+
+// ─── Due date helpers ─────────────────────────────────────────────────────────
+
+function getDueDateStatus(dueDate?: string): "overdue" | "today" | null {
+  if (!dueDate) return null
+  const today = new Date().toISOString().split("T")[0]
+  if (dueDate < today) return "overdue"
+  if (dueDate === today) return "today"
+  return null
+}
+
+function DueDateBadge({ dueDate }: { dueDate?: string }) {
+  const status = getDueDateStatus(dueDate)
+  if (!status) return null
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0",
+      status === "overdue"
+        ? "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400"
+        : "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400"
+    )}>
+      <AlertCircle className="w-2.5 h-2.5" />
+      {status === "overdue" ? "Overdue" : "Due today"}
+    </span>
+  )
+}
+
+// ─── Swipeable completed row ──────────────────────────────────────────────────
+
+interface SwipeableCompletedRowProps {
+  fi: FlaggedItem
+  onToggleComplete: (categoryId: string, itemId: string) => void
+  onSelectItem: (categoryId: string, itemId: string) => void
+  onArchiveItem: (categoryId: string, itemId: string) => void
+  onDeleteItem: (categoryId: string, itemId: string) => void
+}
+
+function SwipeableCompletedRow({ fi, onToggleComplete, onSelectItem, onArchiveItem, onDeleteItem }: SwipeableCompletedRowProps) {
+  const { item, category } = fi
+  const [translateX, setTranslateX] = useState(0)
+  const [swiped, setSwiped] = useState(false)
+  const startXRef = useRef<number | null>(null)
+  const isDraggingRef = useRef(false)
+  const THRESHOLD = 72 // px to trigger archive
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startXRef.current = e.touches[0].clientX
+    isDraggingRef.current = false
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startXRef.current === null) return
+    const dx = e.touches[0].clientX - startXRef.current
+    if (dx < -4) isDraggingRef.current = true
+    if (dx < 0) {
+      setTranslateX(Math.max(dx, -THRESHOLD - 20))
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (translateX <= -THRESHOLD) {
+      setSwiped(true)
+      haptics.medium()
+      setTimeout(() => {
+        onArchiveItem(category.id, item.id)
+      }, 200)
+    } else {
+      setTranslateX(0)
+    }
+    startXRef.current = null
+  }
+
+  return (
+    <div className="relative overflow-hidden border-b border-border last:border-0">
+      {/* Swipe-reveal archive background */}
+      <div className="absolute inset-0 flex items-center justify-end pr-4 bg-primary/10">
+        <div className="flex items-center gap-1 text-primary">
+          <Archive className="w-4 h-4" />
+          <span className="text-xs font-medium">Archive</span>
+        </div>
+      </div>
+
+      {/* Row content */}
+      <div
+        className={cn(
+          "flex items-center gap-2 px-2 py-3 bg-card transition-transform",
+          swiped && "translate-x-[-100%] opacity-0 duration-200"
+        )}
+        style={{ transform: swiped ? undefined : `translateX(${translateX}px)` }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Category color left border */}
+        <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
+
+        <div className="w-3 flex-shrink-0" />
+
+        <div onClick={(e) => {
+          e.stopPropagation()
+          haptics.light()
+          onToggleComplete(category.id, item.id)
+        }}>
+          <Checkbox checked className="h-5 w-5 rounded-full border-2" style={{ borderColor: category.color }} />
+        </div>
+
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectItem(category.id, item.id)}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium truncate line-through text-muted-foreground">{item.text}</p>
+            <DueDateBadge dueDate={item.dueDate} />
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: category.color }} />
+            <span className="text-xs text-muted-foreground">{category.name}</span>
+          </div>
+        </div>
+
+        <Flag className="w-3.5 h-3.5 text-amber-400 fill-current flex-shrink-0" />
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            haptics.medium()
+            onArchiveItem(category.id, item.id)
+          }}
+          className="flex items-center justify-center w-9 h-9 rounded-full active:bg-primary/10 active:text-primary text-muted-foreground/50 hover:text-muted-foreground transition-colors flex-shrink-0"
+          aria-label="Archive"
+        >
+          <Archive className="w-4 h-4" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            haptics.heavy()
+            onDeleteItem(category.id, item.id)
+          }}
+          className="flex items-center justify-center w-9 h-9 rounded-full active:bg-destructive/10 active:text-destructive text-muted-foreground/30 hover:text-muted-foreground transition-colors flex-shrink-0"
+          aria-label="Delete"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // ─── Sortable row ─────────────────────────────────────────────────────────────
@@ -77,6 +228,11 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragg
         isOverlay && "shadow-2xl rounded-xl border border-border opacity-95 scale-[1.03]"
       )}
     >
+      {/* Category color left border */}
+      {!showRecurringIcon && (
+        <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
+      )}
+
       <div {...attributes} {...listeners}
         className="flex-shrink-0 touch-none p-2 text-muted-foreground/30 hover:text-muted-foreground/70 cursor-grab active:cursor-grabbing select-none">
         <GripVertical className="w-4 h-4" />
@@ -90,9 +246,12 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragg
       </div>
 
       <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (!isDragging) onSelectItem(category.id, item.id) }}>
-        <p className={cn("text-sm font-medium truncate", item.completed && "line-through text-muted-foreground")}>
-          {item.text}
-        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className={cn("text-sm font-medium truncate", item.completed && "line-through text-muted-foreground")}>
+            {item.text}
+          </p>
+          {!item.completed && <DueDateBadge dueDate={item.dueDate} />}
+        </div>
       </div>
 
       {showRecurringIcon
@@ -110,7 +269,7 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragg
   )
 }
 
-// ─── Sortable section (per-category group) ────────────────────────────────────
+// ─── Sortable section ─────────────────────────────────────────────────────────
 
 interface SortableSectionProps {
   items: FlaggedItem[]
@@ -166,29 +325,55 @@ function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, onD
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, onSelectItem, onDeleteItem, searchQuery = "" }: FlaggedListProps) {
+export function FlaggedList({
+  flaggedItems, recurringItems,
+  onToggleComplete, onSelectItem, onDeleteItem, onArchiveItem, onArchiveAllCompleted,
+  searchQuery = "",
+}: FlaggedListProps) {
   const [orderedFlagged, setOrderedFlagged] = useState<FlaggedItem[]>(flaggedItems)
   const [orderedRecurring, setOrderedRecurring] = useState<FlaggedItem[]>(recurringItems)
   const [showCompletedToday, setShowCompletedToday] = useState(true)
+  const [showCompletedFlagged, setShowCompletedFlagged] = useState(true)
+  const [sortMode, setSortMode] = useState<SortMode>("manual")
+  const [showSortMenu, setShowSortMenu] = useState(false)
 
   useEffect(() => { setOrderedFlagged(flaggedItems) }, [flaggedItems])
   useEffect(() => { setOrderedRecurring(recurringItems) }, [recurringItems])
+
+  // Apply sort to active flagged items
+  const activeFlaggedRaw = orderedFlagged.filter(fi => !fi.item.completed)
+  const completedFlagged = orderedFlagged.filter(fi => fi.item.completed)
+
+  const activeFlagged = (() => {
+    if (sortMode === "manual") return activeFlaggedRaw
+    const sorted = [...activeFlaggedRaw]
+    if (sortMode === "category") {
+      sorted.sort((a, b) => a.category.name.localeCompare(b.category.name))
+    } else if (sortMode === "oldest") {
+      sorted.sort((a, b) => a.item.createdAt.localeCompare(b.item.createdAt))
+    } else if (sortMode === "newest") {
+      sorted.sort((a, b) => b.item.createdAt.localeCompare(a.item.createdAt))
+    }
+    return sorted
+  })()
 
   const incompleteDaily = orderedRecurring.filter(fi => !fi.item.completed)
   const completedToday = orderedRecurring.filter(fi => fi.item.completed)
   const isSearching = searchQuery.trim().length > 0
   const isEmpty = orderedRecurring.length === 0 && orderedFlagged.length === 0
 
-  // Group incomplete daily items by category (preserving category priority order)
   const categoryGroups = incompleteDaily.reduce<{ category: Category; items: FlaggedItem[] }[]>((groups, fi) => {
     const existing = groups.find(g => g.category.id === fi.category.id)
-    if (existing) {
-      existing.items.push(fi)
-    } else {
-      groups.push({ category: fi.category, items: [fi] })
-    }
+    if (existing) { existing.items.push(fi) } else { groups.push({ category: fi.category, items: [fi] }) }
     return groups
   }, [])
+
+  const sortLabels: Record<SortMode, string> = {
+    manual: "Manual",
+    category: "By Category",
+    oldest: "Oldest First",
+    newest: "Newest First",
+  }
 
   if (isEmpty) {
     return (
@@ -218,7 +403,6 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
       {/* ── Daily Goals section ── */}
       {orderedRecurring.length > 0 && (
         <div>
-          {/* Section header with overall progress */}
           <div className="flex items-center justify-between px-4 py-2 bg-background/50">
             <div className="flex items-center gap-2">
               <RefreshCw className="w-3.5 h-3.5 text-green-500" />
@@ -229,7 +413,6 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
             </span>
           </div>
 
-          {/* Overall progress bar */}
           <div className="mx-4 mb-3 h-1.5 bg-secondary rounded-full overflow-hidden">
             <div
               className="h-full bg-green-500 rounded-full transition-all duration-500"
@@ -237,21 +420,17 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
             />
           </div>
 
-          {/* Incomplete daily goals — grouped by category */}
           {categoryGroups.length > 0 && (
             <div>
               {categoryGroups.map(({ category, items }) => (
                 <div key={category.id}>
-                  {/* Category label */}
                   <div className="flex items-center gap-2 px-4 py-1.5">
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
                     <span className="text-xs font-medium text-muted-foreground">{category.name}</span>
                   </div>
-                  {/* Items in this category */}
                   <SortableSection
                     items={items}
                     onReorder={(reordered) => {
-                      // Replace this category's incomplete items in the full ordered list
                       setOrderedRecurring(prev => {
                         const otherItems = prev.filter(fi => fi.category.id !== category.id)
                         const completedInCat = prev.filter(fi => fi.category.id === category.id && fi.item.completed)
@@ -267,7 +446,6 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
             </div>
           )}
 
-          {/* Completed today — collapsible */}
           {completedToday.length > 0 && (
             <div>
               <button
@@ -322,18 +500,114 @@ export function FlaggedList({ flaggedItems, recurringItems, onToggleComplete, on
       {/* ── Flagged Items section ── */}
       {orderedFlagged.length > 0 && (
         <div>
+          {/* Section header with sort control */}
           <div className="flex items-center gap-2 px-4 py-2 bg-background/50">
             <Flag className="w-3.5 h-3.5 text-accent-foreground" />
             <span className="text-xs font-semibold text-accent-foreground uppercase tracking-wide">Flagged</span>
+            <div className="ml-auto relative">
+              <button
+                onClick={() => setShowSortMenu(s => !s)}
+                className={cn(
+                  "flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors",
+                  showSortMenu
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                )}
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+                <span>{sortLabels[sortMode]}</span>
+                <ArrowUpDown className="w-3 h-3" />
+              </button>
+
+              {showSortMenu && (
+                <div className="absolute right-0 top-full mt-1 z-30 bg-card border border-border rounded-xl shadow-xl overflow-hidden min-w-[140px]">
+                  {(["manual", "category", "oldest", "newest"] as SortMode[]).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => { setSortMode(mode); setShowSortMenu(false); haptics.light() }}
+                      className={cn(
+                        "w-full text-left px-3 py-2.5 text-sm transition-colors",
+                        sortMode === mode
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "hover:bg-secondary/50 text-foreground"
+                      )}
+                    >
+                      {sortLabels[mode]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <SortableSection
-            items={orderedFlagged}
-            onReorder={setOrderedFlagged}
-            onToggleComplete={onToggleComplete}
-            onSelectItem={onSelectItem}
-            onDeleteItem={onDeleteItem}
-          />
+
+          {/* Active (incomplete) flagged items */}
+          {activeFlagged.length > 0 && (
+            <SortableSection
+              items={activeFlagged}
+              onReorder={(reordered) => {
+                if (sortMode !== "manual") return // only reorder in manual mode
+                setOrderedFlagged(prev => {
+                  const completed = prev.filter(fi => fi.item.completed)
+                  return [...reordered, ...completed]
+                })
+              }}
+              onToggleComplete={onToggleComplete}
+              onSelectItem={onSelectItem}
+              onDeleteItem={onDeleteItem}
+            />
+          )}
+
+          {/* Completed flagged items — collapsible with swipe-to-archive + bulk archive */}
+          {completedFlagged.length > 0 && (
+            <div>
+              <div className="flex items-center w-full px-4 py-2 bg-background/30">
+                <button
+                  onClick={() => setShowCompletedFlagged(s => !s)}
+                  className="flex items-center gap-2 flex-1 text-left"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="text-xs font-medium text-amber-600">
+                    Completed ({completedFlagged.length})
+                  </span>
+                  <ChevronDown className={cn(
+                    "w-3.5 h-3.5 text-muted-foreground transition-transform duration-200",
+                    !showCompletedFlagged && "-rotate-90"
+                  )} />
+                </button>
+                {/* Bulk archive button */}
+                <button
+                  onClick={() => { haptics.medium(); onArchiveAllCompleted() }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary active:text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/10"
+                  aria-label="Archive all completed"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>Archive all</span>
+                </button>
+              </div>
+
+              {showCompletedFlagged && (
+                <div className="opacity-70">
+                  <p className="text-[10px] text-muted-foreground/60 px-4 pb-1">← Swipe left to archive</p>
+                  {completedFlagged.map(fi => (
+                    <SwipeableCompletedRow
+                      key={itemKey(fi)}
+                      fi={fi}
+                      onToggleComplete={onToggleComplete}
+                      onSelectItem={onSelectItem}
+                      onArchiveItem={onArchiveItem}
+                      onDeleteItem={onDeleteItem}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Close sort menu on outside click */}
+      {showSortMenu && (
+        <div className="fixed inset-0 z-20" onClick={() => setShowSortMenu(false)} />
       )}
     </div>
   )
