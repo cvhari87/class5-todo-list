@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "firebase/app"
 import { getAuth, GoogleAuthProvider } from "firebase/auth"
-import { getFirestore } from "firebase/firestore"
+import { initializeFirestore, persistentLocalCache } from "firebase/firestore"
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -15,5 +15,11 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
 
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+
+// Enable offline persistence — writes commit to IndexedDB first, sync to server when possible.
+// This means closing the app before a write completes won't lose data.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache(),
+})
+
 export const googleProvider = new GoogleAuthProvider()
