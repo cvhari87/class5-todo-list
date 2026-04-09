@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Bell, BellOff, Lock, LockOpen, ChevronRight, Check } from "lucide-react"
+import { X, Bell, BellOff, Lock, LockOpen, ChevronRight, Check, LogOut } from "lucide-react"
+import { User } from "firebase/auth"
 import { cn } from "@/lib/utils"
 import { haptics } from "@/lib/haptics"
 import {
@@ -18,11 +19,13 @@ import {
 interface SettingsSheetProps {
   open: boolean
   onClose: () => void
+  user: User | null
+  onSignOut: () => void
 }
 
 type PinFlow = "idle" | "setup-new" | "setup-confirm" | "disable-verify"
 
-export function SettingsSheet({ open, onClose }: SettingsSheetProps) {
+export function SettingsSheet({ open, onClose, user, onSignOut }: SettingsSheetProps) {
   const [notifPermission, setNotifPermission] = useState<string>("unsupported")
   const [pinEnabled, setPinEnabledState] = useState(false)
   const [pinFlow, setPinFlow] = useState<PinFlow>("idle")
@@ -245,10 +248,39 @@ export function SettingsSheet({ open, onClose }: SettingsSheetProps) {
             )}
           </div>
 
+          {/* Account */}
+          {user && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Account</p>
+              <div className="bg-background rounded-2xl overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full flex-shrink-0" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <span className="text-sm font-semibold text-primary">{user.displayName?.[0] ?? "?"}</span>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{user.displayName}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { haptics.light(); onSignOut(); onClose() }}
+                  className="flex items-center gap-3 px-4 py-4 w-full active:bg-secondary transition-colors text-destructive"
+                >
+                  <LogOut className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm font-medium">Sign out</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* App info */}
           <div className="pt-2 pb-1">
             <p className="text-xs text-muted-foreground text-center">
-              Notes App · Data stored locally on this device
+              Notes App · {user ? "Synced with Google account" : "Data stored locally on this device"}
             </p>
           </div>
         </div>

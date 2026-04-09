@@ -32,9 +32,19 @@ import { NoteDetail } from "@/components/note-detail"
 import { CategoryManager } from "@/components/category-manager"
 import { LockScreen, isPinEnabled } from "@/components/pin-lock"
 import { SettingsSheet } from "@/components/settings-sheet"
+import { AuthScreen } from "@/components/auth-screen"
 import { scheduleDueNotifications } from "@/lib/notifications"
 import { cn } from "@/lib/utils"
 import { haptics } from "@/lib/haptics"
+import { auth } from "@/lib/firebase"
+import { onAuthStateChanged, signOut, User } from "firebase/auth"
+import {
+  loadCategoriesFromFirestore,
+  saveCategoryToFirestore,
+  deleteCategoryFromFirestore,
+  saveAllCategoriesToFirestore,
+  subscribeToCategories,
+} from "@/lib/firestore"
 
 type View = "flagged" | "categories" | "detail"
 
@@ -202,8 +212,11 @@ export default function TodoApp() {
   const [activeCatId, setActiveCatId] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
   const { theme, setTheme } = useTheme()
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const firestoreUnsub = useRef<(() => void) | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -214,18 +227,46 @@ export default function TodoApp() {
     })
   )
 
+  // Auth state listener
   useEffect(() => {
-    const cats = getCategories()
-    setCategories(cats)
-    setMounted(true)
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser)
+      setAuthChecked(true)
 
-    // PIN lock: show lock screen if PIN is enabled
-    if (isPinEnabled()) {
-      setLocked(true)
-    }
+      if (firebaseUser) {
+        // Load from Firestore, migrate localStorage data if needed
+        const firestoreCats = await loadCategoriesFromFirestore(firebaseUser.uid)
+        if (firestoreCats.length === 0) {
+          // First sign-in: migrate existing localStorage data to Firestore
+          const localCats = getCategories()
+          await saveAllCategoriesToFirestore(firebaseUser.uid, localCats)
+          setCategories(localCats)
+          saveCategories(localCats)
+        } else {
+          setCategories(firestoreCats)
+          saveCategories(firestoreCats)
+        }
 
-    // Notifications: schedule due-date reminders on mount
-    scheduleDueNotifications(cats)
+        // Subscribe to real-time updates
+        if (firestoreUnsub.current) firestoreUnsub.current()
+        firestoreUnsub.current = subscribeToCategories(firebaseUser.uid, (cats) => {
+          setCategories(cats)
+          saveCategories(cats)
+        })
+
+        if (isPinEnabled()) setLocked(true)
+        scheduleDueNotifications(firestoreCats)
+      } else {
+        // Not signed in — fall back to localStorage
+        if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
+        const cats = getCategories()
+        setCategories(cats)
+        scheduleDueNotifications(cats)
+      }
+
+      setMounted(true)
+    })
+    return () => { unsub(); if (firestoreUnsub.current) firestoreUnsub.current() }
   }, [])
 
   // Auto-lock when app goes to background (visibilitychange)
@@ -239,11 +280,9 @@ export default function TodoApp() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
   }, [])
 
-  // Re-schedule notifications whenever categories change (new due dates added)
+  // Re-schedule notifications whenever categories change
   useEffect(() => {
-    if (mounted) {
-      scheduleDueNotifications(categories)
-    }
+    if (mounted) scheduleDueNotifications(categories)
   }, [categories, mounted])
 
   const handleViewParam = useCallback((view: string | null) => {
@@ -251,11 +290,15 @@ export default function TodoApp() {
     else if (view === "flagged") setCurrentView("flagged")
   }, [])
 
+  // Save to localStorage + Firestore whenever categories change
   useEffect(() => {
-    if (mounted) {
-      saveCategories(categories)
+    if (!mounted) return
+    saveCategories(categories)
+    if (user) {
+      // Save each category individually (Firestore batches automatically)
+      categories.forEach(cat => saveCategoryToFirestore(user.uid, cat))
     }
-  }, [categories, mounted])
+  }, [categories, mounted, user])
 
   const openSearch = () => {
     setSearchActive(true)
@@ -337,11 +380,15 @@ export default function TodoApp() {
     const deleted = categories.find(c => c.id === categoryId)
     if (!deleted) return
     setCategories(prev => prev.filter(c => c.id !== categoryId))
+    if (user) deleteCategoryFromFirestore(user.uid, categoryId)
     setCurrentView("categories")
     toast("Note deleted", {
       action: {
         label: "Undo",
-        onClick: () => setCategories(prev => [...prev, deleted]),
+        onClick: () => {
+          setCategories(prev => [...prev, deleted])
+          if (user) saveCategoryToFirestore(user.uid, deleted)
+        },
       },
     })
   }
@@ -374,12 +421,17 @@ export default function TodoApp() {
     )
   }, [recurringItems, searchQuery])
 
-  if (!mounted) {
+  if (!authChecked || !mounted) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     )
+  }
+
+  // Not signed in → show auth screen
+  if (!user) {
+    return <AuthScreen onSignedIn={() => {}} />
   }
 
   // Show lock screen if PIN is enabled and app is locked
@@ -394,7 +446,12 @@ export default function TodoApp() {
       </Suspense>
 
       {/* Settings sheet */}
-      <SettingsSheet open={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsSheet
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        user={user}
+        onSignOut={() => signOut(auth)}
+      />
 
       <div className="max-w-lg mx-auto min-h-[100dvh] flex flex-col">
         {currentView === "detail" && selectedCategory ? (
