@@ -3,12 +3,12 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCv75SolQNbyW4RsgJuSBnsP_Pg7vk4VTE",
-  authDomain: "class5-todo-list-85158.firebaseapp.com",
-  projectId: "class5-todo-list-85158",
-  storageBucket: "class5-todo-list-85158.firebasestorage.app",
-  messagingSenderId: "553124403620",
-  appId: "1:553124403620:web:0dde83fb4315dff2758931",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 }
 
 // Prevent re-initializing on hot reload
