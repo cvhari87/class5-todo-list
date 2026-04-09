@@ -216,6 +216,7 @@ export default function TodoApp() {
   const { theme, setTheme } = useTheme()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const firestoreUnsub = useRef<(() => void) | null>(null)
+  const userRef = useRef<User | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -230,6 +231,7 @@ export default function TodoApp() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser)
+      userRef.current = firebaseUser
       setAuthChecked(true)
 
       if (firebaseUser) {
@@ -318,7 +320,7 @@ export default function TodoApp() {
         const newIndex = sorted.findIndex(c => c.id === over.id)
         const reordered = arrayMove(sorted, oldIndex, newIndex)
         const updated = reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
-        if (user) updated.forEach(cat => saveCategoryToFirestore(user.uid, cat))
+        if (userRef.current) updated.forEach(cat => saveCategoryToFirestore(userRef.current.uid, cat))
         return updated
       })
     }
@@ -340,7 +342,7 @@ export default function TodoApp() {
             }
           }),
         }
-        if (user) saveCategoryToFirestore(user.uid, updatedCat)
+        if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCat)
         return updatedCat
       })
       return updated
@@ -363,12 +365,12 @@ export default function TodoApp() {
     setCategories(prev =>
       prev.map(cat => (cat.id === updatedCategory.id ? updatedCategory : cat))
     )
-    if (user) saveCategoryToFirestore(user.uid, updatedCategory)
+    if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCategory)
   }
 
   const handleAddCategory = (newCategory: Category) => {
     setCategories(prev => [...prev, newCategory])
-    if (user) saveCategoryToFirestore(user.uid, newCategory)
+    if (userRef.current) saveCategoryToFirestore(userRef.current.uid, newCategory)
   }
 
   const handleDeleteItem = (categoryId: string, itemId: string) => {
@@ -378,14 +380,14 @@ export default function TodoApp() {
     if (!deleted) return
     const updatedCat = { ...cat, items: cat.items.filter(i => i.id !== itemId) }
     setCategories(prev => prev.map(c => c.id === categoryId ? updatedCat : c))
-    if (user) saveCategoryToFirestore(user.uid, updatedCat)
+    if (userRef.current) saveCategoryToFirestore(userRef.current.uid, updatedCat)
     toast("Item deleted", {
       action: {
         label: "Undo",
         onClick: () => {
           const restored = { ...updatedCat, items: [...updatedCat.items, deleted] }
           setCategories(prev => prev.map(c => c.id === categoryId ? restored : c))
-          if (user) saveCategoryToFirestore(user.uid, restored)
+          if (userRef.current) saveCategoryToFirestore(userRef.current.uid, restored)
         },
       },
     })
@@ -395,14 +397,14 @@ export default function TodoApp() {
     const deleted = categories.find(c => c.id === categoryId)
     if (!deleted) return
     setCategories(prev => prev.filter(c => c.id !== categoryId))
-    if (user) deleteCategoryFromFirestore(user.uid, categoryId)
+    if (userRef.current) deleteCategoryFromFirestore(userRef.current.uid, categoryId)
     setCurrentView("categories")
     toast("Note deleted", {
       action: {
         label: "Undo",
         onClick: () => {
           setCategories(prev => [...prev, deleted])
-          if (user) saveCategoryToFirestore(user.uid, deleted)
+          if (userRef.current) saveCategoryToFirestore(userRef.current.uid, deleted)
         },
       },
     })
