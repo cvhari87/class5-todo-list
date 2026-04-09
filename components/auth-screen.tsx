@@ -21,9 +21,10 @@ export function AuthScreen({ onSignedIn }: AuthScreenProps) {
         if (result?.user) onSignedIn()
         else setLoading(false)
       })
-      .catch(() => {
+      .catch((e) => {
         setLoading(false)
-        setError("Sign in failed — try again")
+        const code = (e as { code?: string })?.code ?? "unknown"
+        setError(`Sign in failed — ${code}`)
       })
   }, [onSignedIn])
 
