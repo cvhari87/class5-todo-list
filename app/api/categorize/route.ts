@@ -51,10 +51,7 @@ export async function POST(req: NextRequest) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel(
-    { model: "gemini-1.5-flash" },
-    { apiVersion: "v1" }
-  )
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
 
   const existingList =
     existingCategories.length > 0
