@@ -646,6 +646,7 @@ export default function TodoApp() {
         onClose={() => setShowSettings(false)}
         user={user}
         onSignOut={() => signOut(auth)}
+        categories={categories}
       />
 
       <div className="max-w-lg mx-auto min-h-[100dvh] flex flex-col">

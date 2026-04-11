@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Bell, BellOff, Lock, LockOpen, ChevronRight, Check, LogOut } from "lucide-react"
+import { X, Bell, BellOff, Lock, LockOpen, ChevronRight, Check, LogOut, Download } from "lucide-react"
 import { User } from "firebase/auth"
+import { Category } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { haptics } from "@/lib/haptics"
 import {
@@ -21,11 +22,24 @@ interface SettingsSheetProps {
   onClose: () => void
   user: User | null
   onSignOut: () => void
+  categories: Category[]
 }
 
 type PinFlow = "idle" | "setup-new" | "setup-confirm" | "disable-verify"
 
-export function SettingsSheet({ open, onClose, user, onSignOut }: SettingsSheetProps) {
+export function SettingsSheet({ open, onClose, user, onSignOut, categories }: SettingsSheetProps) {
+  const handleExport = () => {
+    haptics.light()
+    const data = JSON.stringify(categories, null, 2)
+    const blob = new Blob([data], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `notes-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const [notifPermission, setNotifPermission] = useState<string>("unsupported")
   const [pinEnabled, setPinEnabledState] = useState(false)
   const [pinFlow, setPinFlow] = useState<PinFlow>("idle")
@@ -246,6 +260,24 @@ export function SettingsSheet({ open, onClose, user, onSignOut }: SettingsSheetP
                 {pinMessage}
               </p>
             )}
+          </div>
+
+          {/* Data */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Data</p>
+            <div className="bg-background rounded-2xl overflow-hidden">
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-3 px-4 py-4 w-full active:bg-secondary transition-colors"
+              >
+                <Download className="w-5 h-5 text-primary flex-shrink-0" />
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium">Export all data</p>
+                  <p className="text-xs text-muted-foreground">Download a JSON backup of all your notes</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
           </div>
 
           {/* Account */}
