@@ -69,7 +69,7 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
 
       {/* Bottom sheet overlay */}
       {open && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+        <div className="fixed inset-x-0 bottom-0 z-50 flex flex-col justify-end" style={{ height: '100dvh' }}>
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
@@ -84,9 +84,9 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
             </div>
 
             {/* Content */}
-            <div className="px-5 pt-2 pb-4">
+            <div className="px-5 pt-2 pb-[max(5rem,env(safe-area-inset-bottom))]">
               {/* Header */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">New Note</h2>
                 <button
                   onClick={() => setOpen(false)}
@@ -103,37 +103,37 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={handleKeyDown}
                 autoFocus
-                className="h-12 text-base rounded-xl mb-4"
+                className="h-11 text-base rounded-xl mb-3"
               />
 
               {/* Color picker */}
-              <p className="text-sm font-medium text-muted-foreground mb-2">Choose a color</p>
-              <div className="flex gap-3">
-                {PRESET_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => { haptics.light(); setSelectedColor(color) }}
-                    className={cn(
-                      "w-6 h-6 rounded-full shrink-0 transition-transform active:scale-90",
-                      selectedColor === color && "scale-110"
-                    )}
-                    style={{
-                      backgroundColor: color,
-                      outline: selectedColor === color ? `3px solid ${color}` : undefined,
-                      outlineOffset: selectedColor === color ? "2px" : undefined,
-                    }}
-                  />
-                ))}
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-sm text-muted-foreground shrink-0">Color</span>
+                <div className="flex gap-2 flex-1">
+                  {PRESET_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => { haptics.light(); setSelectedColor(color) }}
+                      className={cn(
+                        "w-6 h-6 rounded-full shrink-0 transition-transform active:scale-90",
+                        selectedColor === color && "scale-110"
+                      )}
+                      style={{
+                        backgroundColor: color,
+                        outline: selectedColor === color ? `3px solid ${color}` : undefined,
+                        outlineOffset: selectedColor === color ? "2px" : undefined,
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Create button — pinned at bottom, always visible above keyboard */}
-            <div className="px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              {/* Create button — in natural flow, always above keyboard */}
               <button
                 onClick={handleSubmit}
                 disabled={!name.trim()}
-                className="w-full h-16 rounded-2xl font-semibold text-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white"
-                style={{ backgroundColor: name.trim() ? selectedColor : "#8888" }}
+                className="w-full h-14 rounded-2xl font-semibold text-base transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white"
+                style={{ backgroundColor: name.trim() ? selectedColor : "#88888888" }}
               >
                 Create Note
               </button>
