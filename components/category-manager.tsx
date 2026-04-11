@@ -77,15 +77,16 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
           />
 
           {/* Sheet */}
-          <div className="relative bg-card rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300 pb-[env(safe-area-inset-bottom)]">
+          <div className="relative bg-card rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300">
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-10 h-1 rounded-full bg-border" />
             </div>
 
-            <div className="px-5 pb-6">
+            {/* Content */}
+            <div className="px-5 pt-2 pb-4">
               {/* Header */}
-              <div className="flex items-center justify-between mb-5 mt-2">
+              <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">New Note</h2>
                 <button
                   onClick={() => setOpen(false)}
@@ -102,18 +103,18 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={handleKeyDown}
                 autoFocus
-                className="h-12 text-base rounded-xl mb-5"
+                className="h-12 text-base rounded-xl mb-4"
               />
 
               {/* Color picker */}
-              <p className="text-sm font-medium text-muted-foreground mb-3">Choose a color</p>
-              <div className="grid grid-cols-8 gap-2 mb-6">
+              <p className="text-sm font-medium text-muted-foreground mb-2">Choose a color</p>
+              <div className="flex gap-3">
                 {PRESET_COLORS.map((color) => (
                   <button
                     key={color}
                     onClick={() => { haptics.light(); setSelectedColor(color) }}
                     className={cn(
-                      "w-full aspect-square rounded-full transition-transform active:scale-90",
+                      "w-6 h-6 rounded-full shrink-0 transition-transform active:scale-90",
                       selectedColor === color && "scale-110"
                     )}
                     style={{
@@ -124,23 +125,15 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
                   />
                 ))}
               </div>
+            </div>
 
-              {/* Preview */}
-              {name.trim() && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 mb-5">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: selectedColor + "20" }}>
-                    <div className="w-5 h-5 rounded-lg" style={{ backgroundColor: selectedColor }} />
-                  </div>
-                  <span className="font-medium">{name.trim()}</span>
-                </div>
-              )}
-
-              {/* Create button */}
+            {/* Create button — pinned at bottom, always visible above keyboard */}
+            <div className="px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               <button
                 onClick={handleSubmit}
                 disabled={!name.trim()}
-                className="w-full h-14 rounded-2xl font-semibold text-base transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white"
-                style={{ backgroundColor: name.trim() ? selectedColor : undefined }}
+                className="w-full h-16 rounded-2xl font-semibold text-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white"
+                style={{ backgroundColor: name.trim() ? selectedColor : "#8888" }}
               >
                 Create Note
               </button>
