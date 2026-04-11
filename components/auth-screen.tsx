@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { signInWithRedirect, getRedirectResult, signInWithPopup } from "firebase/auth"
+import { useState } from "react"
+import { signInWithPopup } from "firebase/auth"
 import { auth, googleProvider } from "@/lib/firebase"
 import { cn } from "@/lib/utils"
 
@@ -13,34 +13,12 @@ export function AuthScreen({ onSignedIn }: AuthScreenProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
-  // Handle redirect result on page load (mobile Safari flow)
-  useEffect(() => {
-    setLoading(true)
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result?.user) onSignedIn()
-        else setLoading(false)
-      })
-      .catch((e) => {
-        setLoading(false)
-        const code = (e as { code?: string })?.code ?? "unknown"
-        setError(`Sign in failed — ${code}`)
-      })
-  }, [onSignedIn])
-
   const handleGoogleSignIn = async () => {
     setLoading(true)
     setError("")
     try {
-      // Use redirect on mobile Safari, popup on desktop
-      const isMobileSafari = /iP(hone|ad|od)/.test(navigator.userAgent)
-      if (isMobileSafari) {
-        await signInWithRedirect(auth, googleProvider)
-        // Page redirects — no code runs after this
-      } else {
-        await signInWithPopup(auth, googleProvider)
-        onSignedIn()
-      }
+      await signInWithPopup(auth, googleProvider)
+      onSignedIn()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Sign in failed"
       setError(msg.includes("popup-closed") ? "Sign in cancelled" : "Sign in failed — try again")
