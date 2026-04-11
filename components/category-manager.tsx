@@ -21,10 +21,17 @@ const PRESET_COLORS = [
 
 interface CategoryManagerProps {
   onAddCategory: (category: Category) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function CategoryManager({ onAddCategory }: CategoryManagerProps) {
-  const [open, setOpen] = useState(false)
+export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChange }: CategoryManagerProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = externalOpen !== undefined ? externalOpen : internalOpen
+  const setOpen = (v: boolean) => {
+    setInternalOpen(v)
+    onOpenChange?.(v)
+  }
   const [name, setName] = useState("")
   const [selectedColor, setSelectedColor] = useState(PRESET_COLORS[0])
 

@@ -99,18 +99,27 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     setStep("preview")
   }
 
-  // ── Handle image file selection ──────────────────────────────────────────
+  // ── Handle image file selection (resize to max 1024px before sending) ──────
   const handleImageFile = (file: File) => {
     if (!file.type.startsWith("image/")) return
-    setImageMimeType(file.type)
     const reader = new FileReader()
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string
-      // dataUrl = "data:image/jpeg;base64,XXXX" — strip the prefix
-      const base64 = dataUrl.split(",")[1]
-      setImageBase64(base64)
-      setImagePreview(dataUrl)
-      setRawText("") // clear text when image is selected
+      const img = new Image()
+      img.onload = () => {
+        const MAX = 1024
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const resized = canvas.toDataURL("image/jpeg", 0.85)
+        setImageBase64(resized.split(",")[1])
+        setImageMimeType("image/jpeg")
+        setImagePreview(resized)
+        setRawText("")
+      }
+      img.src = dataUrl
     }
     reader.readAsDataURL(file)
   }
@@ -281,7 +290,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
         {/* Header */}
         <div className="flex items-center justify-between px-5 pb-3 pt-1 flex-shrink-0">
           <div>
-            <h2 className="text-lg font-semibold">Import from Apple Notes</h2>
+            <h2 className="text-lg font-semibold">Import</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               {step === "paste" && "Paste your note text below"}
               {step === "preview" && `${selectedCount} of ${items.length} items selected`}
@@ -446,8 +455,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
             )}
 
             {/* Select all / none */}
-            <div className="flex items-center justify-between flex-shrink-0">
-              <p className="text-xs text-muted-foreground">Tap to deselect · Tap badge to change type</p>
+            <div className="flex items-center gap-3 flex-shrink-0">
               <div className="flex gap-2">
                 <button
                   onClick={() => { haptics.light(); setItems(p => p.map(i => ({ ...i, selected: true }))) }}
@@ -459,6 +467,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
                   className="text-xs text-muted-foreground font-medium"
                 >None</button>
               </div>
+              <p className="text-xs text-muted-foreground">Tap to select · Tap badge to change type</p>
             </div>
 
             {/* Item list */}
@@ -521,6 +530,69 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
               </div>
             )}
 
+            {/* AI mode: inline destination picker so user can import without going to step 3 */}
+            {importMode === "ai" && (
+              <div className="flex-shrink-0 rounded-2xl bg-secondary/60 p-3 flex flex-col gap-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Destination note</p>
+
+                {selectedCategoryId ? (
+                  /* Existing category selected */
+                  <div className="flex items-center gap-3">
+                    {(() => {
+                      const cat = categories.find(c => c.id === selectedCategoryId)
+                      return cat ? (
+                        <>
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cat.color + "20" }}>
+                            <div className="w-3.5 h-3.5 rounded-md" style={{ backgroundColor: cat.color }} />
+                          </div>
+                          <span className="font-medium text-sm flex-1">{cat.name}</span>
+                        </>
+                      ) : null
+                    })()}
+                    <button
+                      onClick={() => { haptics.light(); setStep("assign") }}
+                      className="text-sm text-primary font-semibold px-4 py-2 bg-primary/10 rounded-xl"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  /* New category — inline creation */
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                      <input
+                        placeholder="New note name…"
+                        value={newCatName}
+                        onChange={e => setNewCatName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") handleCreateCategory() }}
+                        className="flex-1 bg-transparent text-sm font-medium focus:outline-none placeholder:text-muted-foreground"
+                      />
+                      <button
+                        onClick={() => { haptics.light(); setStep("assign") }}
+                        className="text-xs text-muted-foreground font-medium px-2 py-1"
+                      >
+                        Pick existing
+                      </button>
+                    </div>
+                    <div className="flex gap-1.5">
+                      {PRESET_COLORS.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => { haptics.light(); setNewCatColor(c) }}
+                          className={cn(
+                            "w-5 h-5 rounded-full transition-transform active:scale-90",
+                            newCatColor === c && "scale-110 ring-2 ring-offset-1 ring-current"
+                          )}
+                          style={{ backgroundColor: c, color: c }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-3 flex-shrink-0">
               <button
                 onClick={() => { haptics.light(); setStep("paste") }}
@@ -528,14 +600,57 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
               >
                 Back
               </button>
-              <button
-                onClick={handleGoAssign}
-                disabled={selectedCount === 0}
-                className="flex-1 h-12 rounded-2xl font-semibold text-sm bg-primary text-primary-foreground transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <ChevronRight className="w-4 h-4" />
-                Choose Destination ({selectedCount})
-              </button>
+              {importMode === "ai" ? (
+                <button
+                  onClick={() => {
+                    if (selectedCategoryId) {
+                      handleImport()
+                    } else {
+                      // Create the new category then import
+                      if (!newCatName.trim()) return
+                      haptics.success()
+                      const newCat: Category = {
+                        id: generateId(),
+                        name: newCatName.trim(),
+                        color: newCatColor,
+                        priority: Date.now(),
+                        items: [],
+                      }
+                      onAddCategory(newCat)
+                      setSelectedCategoryId(newCat.id)
+                      // Import after state update
+                      const now = new Date().toISOString()
+                      const todoItems = items
+                        .filter(i => i.selected)
+                        .map(i => ({
+                          id: generateId(),
+                          text: i.text,
+                          type: i.type,
+                          completed: i.completed,
+                          flagged: false as const,
+                          createdAt: now,
+                        }))
+                      onImport(newCat.id, todoItems)
+                      reset()
+                      onClose()
+                    }
+                  }}
+                  disabled={selectedCount === 0 || (!selectedCategoryId && !newCatName.trim())}
+                  className="flex-1 h-12 rounded-2xl font-semibold text-sm bg-primary text-primary-foreground transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Upload className="w-4 h-4" />
+                  Import {selectedCount} Item{selectedCount !== 1 ? "s" : ""}
+                </button>
+              ) : (
+                <button
+                  onClick={handleGoAssign}
+                  disabled={selectedCount === 0}
+                  className="flex-1 h-12 rounded-2xl font-semibold text-sm bg-primary text-primary-foreground transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                  Choose Destination ({selectedCount})
+                </button>
+              )}
             </div>
           </div>
         )}

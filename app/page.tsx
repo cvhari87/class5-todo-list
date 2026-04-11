@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense, useRef, useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
-import { Flag, List, Moon, Sun, Search, X, GripVertical, Settings, Archive, RefreshCw, Upload } from "lucide-react"
+import { Flag, List, Moon, Sun, Search, X, GripVertical, Settings, Archive, RefreshCw, Upload, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import {
@@ -121,11 +121,13 @@ function SearchResults({
   query,
   categories,
   onSelectCategory,
+  onSelectItem,
   onNavigateToTab,
 }: {
   query: string
   categories: Category[]
   onSelectCategory: (id: string) => void
+  onSelectItem: (categoryId: string, itemId: string) => void
   onNavigateToTab: (tab: "flagged" | "archive") => void
 }) {
   const q = query.toLowerCase().trim()
@@ -219,7 +221,7 @@ function SearchResults({
             } else if (r.kind === "archived") {
               onNavigateToTab("archive")
             } else {
-              onSelectCategory(r.categoryId)
+              onSelectItem(r.categoryId, r.itemId)
             }
           }}
           className="flex items-center gap-3 px-3 py-3 rounded-xl bg-card active:bg-secondary transition-colors text-left"
@@ -249,6 +251,8 @@ export default function TodoApp() {
   const [locked, setLocked] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showNewCategory, setShowNewCategory] = useState(false)
+  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const { theme, setTheme } = useTheme()
@@ -381,10 +385,31 @@ export default function TodoApp() {
     })
   }
 
-  const handleSelectItem = (categoryId: string, _itemId: string) => {
+  const handleSelectItem = (categoryId: string, itemId: string) => {
     setSelectedCategoryId(categoryId)
+    setScrollToItemId(itemId)
     setCurrentView("detail")
     closeSearch()
+  }
+
+  const handleMoveItem = (fromCategoryId: string, itemId: string, toCategoryId: string) => {
+    setCategories(prev => {
+      const fromCat = prev.find(c => c.id === fromCategoryId)
+      const toCat = prev.find(c => c.id === toCategoryId)
+      if (!fromCat || !toCat) return prev
+      const item = fromCat.items.find(i => i.id === itemId)
+      if (!item) return prev
+      const updatedFrom = { ...fromCat, items: fromCat.items.filter(i => i.id !== itemId) }
+      const updatedTo = { ...toCat, items: [...toCat.items, item] }
+      if (userRef.current) {
+        saveCategoryToFirestore(userRef.current.uid, updatedFrom)
+        saveCategoryToFirestore(userRef.current.uid, updatedTo)
+      }
+      return prev.map(c =>
+        c.id === fromCategoryId ? updatedFrom : c.id === toCategoryId ? updatedTo : c
+      )
+    })
+    toast(`Moved to ${categories.find(c => c.id === toCategoryId)?.name ?? "note"}`)
   }
 
   const handleSelectCategory = (categoryId: string) => {
@@ -627,9 +652,12 @@ export default function TodoApp() {
         {currentView === "detail" && selectedCategory ? (
           <NoteDetail
             category={selectedCategory}
+            allCategories={categories}
             onBack={() => setCurrentView("categories")}
             onUpdateCategory={handleUpdateCategory}
             onDeleteCategory={() => handleDeleteCategory(selectedCategory.id)}
+            onMoveItem={(itemId, toCategoryId) => handleMoveItem(selectedCategory.id, itemId, toCategoryId)}
+            scrollToItemId={scrollToItemId ?? undefined}
           />
         ) : (
           <>
@@ -640,13 +668,22 @@ export default function TodoApp() {
                   <h1 className="text-3xl font-bold tracking-tight">{headerTitle}</h1>
                   <div className="flex items-center gap-1">
                     {currentView === "categories" && (
-                      <button
-                        onClick={() => { haptics.light(); setShowImport(true) }}
-                        className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                        aria-label="Import from Apple Notes"
-                      >
-                        <Upload className="w-5 h-5" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => { haptics.light(); setShowNewCategory(true) }}
+                          className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                          aria-label="New note"
+                        >
+                          <Plus className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => { haptics.light(); setShowImport(true) }}
+                          className="w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                          aria-label="Import from Apple Notes"
+                        >
+                          <Upload className="w-5 h-5" />
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={openSearch}
@@ -708,6 +745,7 @@ export default function TodoApp() {
                   query={searchQuery}
                   categories={categories}
                   onSelectCategory={handleSelectCategory}
+                  onSelectItem={handleSelectItem}
                   onNavigateToTab={(tab) => {
                     setCurrentView(tab)
                     closeSearch()
@@ -780,7 +818,11 @@ export default function TodoApp() {
                     </div>
                   )}
 
-                  <CategoryManager onAddCategory={handleAddCategory} />
+                  <CategoryManager
+                    onAddCategory={handleAddCategory}
+                    open={showNewCategory}
+                    onOpenChange={setShowNewCategory}
+                  />
                 </div>
               )}
             </main>

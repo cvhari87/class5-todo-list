@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput } from "lucide-react"
 import { toast } from "sonner"
 import {
   DndContext,
@@ -39,12 +39,15 @@ type SortOrder = "default" | "flagged" | "incomplete" | "alpha"
 
 interface NoteDetailProps {
   category: Category
+  allCategories: Category[]
   onBack: () => void
   onUpdateCategory: (category: Category) => void
   onDeleteCategory: () => void
+  onMoveItem: (itemId: string, targetCategoryId: string) => void
+  scrollToItemId?: string
 }
 
-export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategory }: NoteDetailProps) {
+export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, onDeleteCategory, onMoveItem, scrollToItemId }: NoteDetailProps) {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [addingType, setAddingType] = useState<ItemType | null>(null)
   const [newItemText, setNewItemText] = useState("")
@@ -56,7 +59,22 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(false)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [movingItemId, setMovingItemId] = useState<string | null>(null)
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null)
   const confirmNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Scroll to and briefly highlight the item from search
+  useEffect(() => {
+    if (!scrollToItemId) return
+    const el = document.querySelector(`[data-item-id="${scrollToItemId}"]`)
+    if (el) {
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" })
+        setHighlightedItemId(scrollToItemId)
+        setTimeout(() => setHighlightedItemId(null), 1800)
+      }, 120)
+    }
+  }, [scrollToItemId])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -309,6 +327,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
               items={incompleteItems}
               categoryColor={category.color}
               activeDragId={activeDragId}
+              highlightedItemId={highlightedItemId}
               allItems={category.items}
               sensors={sensors}
               onDragStart={handleItemDragStart}
@@ -319,6 +338,7 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
               onDelete={handleDeleteItem}
               onUpdateText={handleUpdateText}
               onUpdateDueDate={handleUpdateDueDate}
+              onMove={(id) => { haptics.light(); setMovingItemId(id) }}
             />
           </div>
         )}
@@ -451,6 +471,47 @@ export function NoteDetail({ category, onBack, onUpdateCategory, onDeleteCategor
         </div>
       </div>
 
+      {/* ── Move to Category Sheet ── */}
+      {movingItemId && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={() => setMovingItemId(null)}
+          />
+          <div
+            className="relative bg-card rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-200"
+            style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          >
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-5 pb-3">Move to note</p>
+            {allCategories
+              .filter(c => c.id !== category.id)
+              .sort((a, b) => a.priority - b.priority)
+              .map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => {
+                    haptics.success()
+                    onMoveItem(movingItemId, cat.id)
+                    setMovingItemId(null)
+                  }}
+                  className="flex items-center gap-3 w-full px-5 py-4 text-base transition-colors active:bg-secondary border-b border-border last:border-0 text-left"
+                >
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cat.color + "20" }}>
+                    <div className="w-4 h-4 rounded-md" style={{ backgroundColor: cat.color }} />
+                  </div>
+                  <span className="font-medium">{cat.name}</span>
+                </button>
+              ))}
+            {allCategories.filter(c => c.id !== category.id).length === 0 && (
+              <p className="px-5 py-4 text-sm text-muted-foreground">No other notes to move to.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Sort Bottom Sheet ── */}
       {showSortMenu && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end">
@@ -497,6 +558,7 @@ interface SortableItemListProps {
   items: TodoItem[]
   categoryColor: string
   activeDragId: string | null
+  highlightedItemId: string | null
   allItems: TodoItem[]
   sensors: ReturnType<typeof useSensors>
   onDragStart: (e: DragStartEvent) => void
@@ -507,13 +569,14 @@ interface SortableItemListProps {
   onDelete: (id: string) => void
   onUpdateText: (id: string, text: string) => void
   onUpdateDueDate: (id: string, date: string) => void
+  onMove: (id: string) => void
 }
 
 function SortableItemList({
-  items, categoryColor, activeDragId, allItems, sensors,
+  items, categoryColor, activeDragId, highlightedItemId, allItems, sensors,
   onDragStart, onDragEnd,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
-  onUpdateText, onUpdateDueDate,
+  onUpdateText, onUpdateDueDate, onMove,
 }: SortableItemListProps) {
   return (
     <DndContext
@@ -530,12 +593,14 @@ function SortableItemList({
             item={item}
             categoryColor={categoryColor}
             sortable
+            highlighted={highlightedItemId === item.id}
             onToggleComplete={() => onToggleComplete(item.id)}
             onToggleFlag={() => onToggleFlag(item.id)}
             onToggleRecurring={() => onToggleRecurring(item.id)}
             onDelete={() => onDelete(item.id)}
             onUpdateText={(text) => onUpdateText(item.id, text)}
             onUpdateDueDate={(date) => onUpdateDueDate(item.id, date)}
+            onMove={item.type === "todo" ? () => onMove(item.id) : undefined}
           />
         ))}
       </SortableContext>
@@ -566,18 +631,20 @@ interface NoteItemRowProps {
   categoryColor: string
   sortable?: boolean
   isOverlay?: boolean
+  highlighted?: boolean
   onToggleComplete: () => void
   onToggleFlag: () => void
   onToggleRecurring: () => void
   onDelete: () => void
   onUpdateText: (text: string) => void
   onUpdateDueDate: (date: string) => void
+  onMove?: () => void
 }
 
 function NoteItemRow({
-  item, categoryColor, sortable = false, isOverlay,
+  item, categoryColor, sortable = false, isOverlay, highlighted,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
-  onUpdateText, onUpdateDueDate,
+  onUpdateText, onUpdateDueDate, onMove,
 }: NoteItemRowProps) {
   const {
     attributes,
@@ -678,6 +745,7 @@ function NoteItemRow({
     <div
       ref={setNodeRef}
       style={dndStyle}
+      data-item-id={item.id}
       className={cn(
         "relative overflow-hidden",
         isDragging && !isOverlay && "opacity-30",
@@ -693,7 +761,10 @@ function NoteItemRow({
       </div>
 
       <div
-        className="flex items-center gap-1 px-2 py-1 bg-card transition-all select-none"
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 bg-card transition-all select-none",
+          highlighted && "bg-primary/10"
+        )}
         style={{ transform: `translateX(${swipeOffset}px)` }}
         onClick={() => swipeOffset < 0 ? setSwipeOffset(0) : undefined}
       >
@@ -713,7 +784,9 @@ function NoteItemRow({
         {/* Checkbox / indicator — 44px tap target */}
         <div className="flex-shrink-0 flex items-center justify-center w-11 h-11">
           {item.type === "todo" && (
-            <button
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 if (!item.completed) {
                   setJustCompleted(true)
@@ -721,8 +794,9 @@ function NoteItemRow({
                 }
                 onToggleComplete()
               }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!item.completed) { setJustCompleted(true); setTimeout(() => setJustCompleted(false), 600) } onToggleComplete() } }}
               className={cn(
-                "flex items-center justify-center w-11 h-11 rounded-full transition-all duration-150",
+                "flex items-center justify-center w-11 h-11 rounded-full transition-all duration-150 cursor-pointer",
                 justCompleted && "scale-125",
                 !justCompleted && "active:bg-secondary/50"
               )}
@@ -736,7 +810,7 @@ function NoteItemRow({
                 )}
                 style={{ borderColor: categoryColor }}
               />
-            </button>
+            </div>
           )}
           {item.type === "header" && <div className="w-1 h-4 rounded-full" style={{ backgroundColor: categoryColor }} />}
           {item.type === "text" && <AlignLeft className="w-3.5 h-3.5 text-muted-foreground/30" />}
@@ -824,8 +898,11 @@ function NoteItemRow({
                   <a
                     href={(() => {
                       const dateStr = item.dueDate.replace(/-/g, "")
+                      const d = new Date(item.dueDate + "T00:00:00")
+                      d.setDate(d.getDate() + 1)
+                      const endStr = d.toISOString().slice(0, 10).replace(/-/g, "")
                       const title = encodeURIComponent(item.text)
-                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${dateStr}&details=Added+from+Notes+app`
+                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${endStr}&details=Added+from+Notes+app`
                     })()}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -880,6 +957,16 @@ function NoteItemRow({
                   aria-label={item.flagged ? "Unflag" : "Flag"}
                 >
                   <Flag className={cn("w-4 h-4", item.flagged && "fill-current")} />
+                </button>
+              )}
+              {/* Move to category — 44px */}
+              {onMove && (
+                <button
+                  onClick={onMove}
+                  className="flex items-center justify-center w-11 h-11 rounded-full transition-colors text-muted-foreground/30 active:bg-secondary active:text-foreground"
+                  aria-label="Move to another note"
+                >
+                  <FolderInput className="w-4 h-4" />
                 </button>
               )}
             </>
