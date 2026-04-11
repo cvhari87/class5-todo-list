@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import {
   Flag, GripVertical, RefreshCw, CheckCircle2, ChevronDown,
-  Trash2, Archive, AlertCircle, ArrowUpDown, SlidersHorizontal,
+  Trash2, Archive, AlertCircle, ArrowUpDown, SlidersHorizontal, CalendarDays,
 } from "lucide-react"
 import {
   DndContext,
@@ -53,12 +53,12 @@ function itemKey(fi: FlaggedItem) {
 
 // ─── Due date helpers ─────────────────────────────────────────────────────────
 
-function getDueDateStatus(dueDate?: string): "overdue" | "today" | null {
+function getDueDateStatus(dueDate?: string): "overdue" | "today" | "future" | null {
   if (!dueDate) return null
   const today = new Date().toISOString().split("T")[0]
   if (dueDate < today) return "overdue"
   if (dueDate === today) return "today"
-  return null
+  return "future"
 }
 
 function DueDateBadge({ dueDate }: { dueDate?: string }) {
@@ -69,10 +69,15 @@ function DueDateBadge({ dueDate }: { dueDate?: string }) {
       "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0",
       status === "overdue"
         ? "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400"
-        : "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400"
+        : status === "today"
+        ? "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400"
+        : "bg-secondary text-muted-foreground"
     )}>
-      <AlertCircle className="w-2.5 h-2.5" />
-      {status === "overdue" ? "Overdue" : "Due today"}
+      {status === "overdue" || status === "today"
+        ? <AlertCircle className="w-2.5 h-2.5" />
+        : <CalendarDays className="w-2.5 h-2.5" />
+      }
+      {status === "overdue" ? "Overdue" : status === "today" ? "Due today" : dueDate}
     </span>
   )
 }
@@ -252,6 +257,12 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragg
           </p>
           {!item.completed && <DueDateBadge dueDate={item.dueDate} />}
         </div>
+        {!item.completed && item.dueDate && getDueDateStatus(item.dueDate) === null && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <CalendarDays className="w-3 h-3 text-muted-foreground/50" />
+            <span className="text-xs text-muted-foreground/60">{item.dueDate}</span>
+          </div>
+        )}
       </div>
 
       {showRecurringIcon

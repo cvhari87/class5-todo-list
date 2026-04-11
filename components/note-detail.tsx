@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput, Pencil, CheckCheck, Square } from "lucide-react"
 import { toast } from "sonner"
 import {
   DndContext,
@@ -62,6 +62,74 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
   const [movingItemId, setMovingItemId] = useState<string | null>(null)
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null)
   const confirmNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Bulk selection state ──────────────────────────────────────────────────
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  const enterSelectMode = (itemId: string) => {
+    haptics.medium()
+    setSelectMode(true)
+    setSelectedIds(new Set([itemId]))
+    setAddMenuOpen(false)
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  const toggleSelectItem = (itemId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+  }
+
+  const handleBulkComplete = () => {
+    haptics.success()
+    const today = new Date().toISOString().split("T")[0]
+    onUpdateCategory({
+      ...category,
+      items: category.items.map(item =>
+        selectedIds.has(item.id) && item.type === "todo"
+          ? { ...item, completed: true, lastCompletedDate: today }
+          : item
+      ),
+    })
+    exitSelectMode()
+  }
+
+  const handleBulkFlag = () => {
+    haptics.medium()
+    onUpdateCategory({
+      ...category,
+      items: category.items.map(item =>
+        selectedIds.has(item.id) && item.type === "todo"
+          ? { ...item, flagged: !item.flagged }
+          : item
+      ),
+    })
+    exitSelectMode()
+  }
+
+  const handleBulkDelete = () => {
+    haptics.heavy()
+    onUpdateCategory({
+      ...category,
+      items: category.items.filter(item => !selectedIds.has(item.id)),
+    })
+    exitSelectMode()
+  }
+
+  const handleSelectAll = () => {
+    const allTodoIds = category.items
+      .filter(i => i.type === "todo")
+      .map(i => i.id)
+    setSelectedIds(new Set(allTodoIds))
+  }
 
   // Scroll to and briefly highlight the item from search
   useEffect(() => {
@@ -339,6 +407,10 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
               onUpdateText={handleUpdateText}
               onUpdateDueDate={handleUpdateDueDate}
               onMove={(id) => { haptics.light(); setMovingItemId(id) }}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onLongPress={enterSelectMode}
+              onToggleSelect={toggleSelectItem}
             />
           </div>
         )}
@@ -363,6 +435,10 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
                   onDelete={() => handleDeleteItem(item.id)}
                   onUpdateText={(text) => handleUpdateText(item.id, text)}
                   onUpdateDueDate={(date) => handleUpdateDueDate(item.id, date)}
+                  selectMode={selectMode}
+                  isSelected={selectedIds.has(item.id)}
+                  onLongPress={() => enterSelectMode(item.id)}
+                  onToggleSelect={() => toggleSelectItem(item.id)}
                 />
               ))}
             </div>
@@ -426,49 +502,112 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         <div className="max-w-lg mx-auto flex items-center justify-between">
-          {/* Sort button — opens bottom sheet */}
-          <button
-            onClick={() => { haptics.light(); setShowSortMenu(s => !s) }}
-            className={cn(
-              "flex items-center gap-1.5 h-10 px-3 rounded-xl transition-colors",
-              sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-            )}
-          >
-            <ArrowUpDown className="w-4 h-4" />
-            <span className="text-xs">{sortLabels[sortOrder]}</span>
-          </button>
+          {selectMode ? (
+            /* ── Bulk action bar ── */
+            <>
+              <button
+                onClick={exitSelectMode}
+                className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors text-sm"
+              >
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
 
-          {/* Add button — 48px, prominent */}
-          <div className="relative">
-            <button
-              onClick={() => { haptics.light(); setAddMenuOpen(prev => !prev) }}
-              className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
-              aria-label="Add item"
-            >
-              <Plus className="w-6 h-6" />
-            </button>
-            {addMenuOpen && (
-              <div className="absolute bottom-14 right-0 bg-card rounded-2xl shadow-xl border border-border overflow-hidden w-48 animate-in fade-in slide-in-from-bottom-2">
-                {[
-                  { type: "header" as ItemType, icon: <Heading className="w-4 h-4 text-muted-foreground" />, label: "Header" },
-                  { type: "text" as ItemType, icon: <AlignLeft className="w-4 h-4 text-muted-foreground" />, label: "Text" },
-                  { type: "todo" as ItemType, icon: <CheckSquare className="w-4 h-4 text-muted-foreground" />, label: "Todo" },
-                ].map(({ type, icon, label }, i, arr) => (
-                  <button
-                    key={type}
-                    onClick={() => startAdding(type)}
-                    className={cn(
-                      "flex items-center gap-3 w-full px-4 py-4 text-sm hover:bg-secondary/50 active:bg-secondary transition-colors",
-                      i < arr.length - 1 && "border-b border-border"
-                    )}
-                  >
-                    {icon}<span>{label}</span>
-                  </button>
-                ))}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleSelectAll}
+                  className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  title="Select all todos"
+                >
+                  <Square className="w-3.5 h-3.5" />
+                  All
+                </button>
+                <button
+                  onClick={handleBulkComplete}
+                  disabled={selectedIds.size === 0}
+                  className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs bg-green-500/10 text-green-600 hover:bg-green-500/20 disabled:opacity-40 transition-colors"
+                  title="Mark selected complete"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  Done
+                </button>
+                <button
+                  onClick={handleBulkFlag}
+                  disabled={selectedIds.size === 0}
+                  className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+                  title="Toggle flag on selected"
+                >
+                  <Flag className="w-4 h-4" />
+                  Flag
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedIds.size === 0}
+                  className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 disabled:opacity-40 transition-colors"
+                  title="Delete selected"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
               </div>
-            )}
-          </div>
+            </>
+          ) : (
+            /* ── Normal toolbar ── */
+            <>
+              {/* Sort button — opens bottom sheet */}
+              <button
+                onClick={() => { haptics.light(); setShowSortMenu(s => !s) }}
+                className={cn(
+                  "flex items-center gap-1.5 h-10 px-3 rounded-xl transition-colors",
+                  sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                )}
+              >
+                <ArrowUpDown className="w-4 h-4" />
+                <span className="text-xs">{sortLabels[sortOrder]}</span>
+              </button>
+
+              {/* Add button — 48px, prominent */}
+              <div className="relative">
+                <button
+                  onClick={() => { haptics.light(); setAddMenuOpen(prev => !prev) }}
+                  className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg active:scale-95 transition-transform"
+                  aria-label="Add item"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+                {addMenuOpen && (
+                  <div className="absolute bottom-14 right-0 bg-card rounded-2xl shadow-xl border border-border overflow-hidden w-48 animate-in fade-in slide-in-from-bottom-2">
+                    {[
+                      { type: "header" as ItemType, icon: <Heading className="w-4 h-4 text-muted-foreground" />, label: "Header" },
+                      { type: "text" as ItemType, icon: <AlignLeft className="w-4 h-4 text-muted-foreground" />, label: "Text" },
+                      { type: "todo" as ItemType, icon: <CheckSquare className="w-4 h-4 text-muted-foreground" />, label: "Todo" },
+                    ].map(({ type, icon, label }, i, arr) => (
+                      <button
+                        key={type}
+                        onClick={() => startAdding(type)}
+                        className={cn(
+                          "flex items-center gap-3 w-full px-4 py-4 text-sm hover:bg-secondary/50 active:bg-secondary transition-colors",
+                          i < arr.length - 1 && "border-b border-border"
+                        )}
+                      >
+                        {icon}<span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
+
+        {/* Selection count indicator */}
+        {selectMode && (
+          <div className="max-w-lg mx-auto pt-1 pb-0.5">
+            <p className="text-center text-xs text-muted-foreground">
+              {selectedIds.size === 0 ? "Tap items to select" : `${selectedIds.size} item${selectedIds.size !== 1 ? "s" : ""} selected`}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Move to Category Sheet ── */}
@@ -570,6 +709,10 @@ interface SortableItemListProps {
   onUpdateText: (id: string, text: string) => void
   onUpdateDueDate: (id: string, date: string) => void
   onMove: (id: string) => void
+  selectMode: boolean
+  selectedIds: Set<string>
+  onLongPress: (id: string) => void
+  onToggleSelect: (id: string) => void
 }
 
 function SortableItemList({
@@ -577,6 +720,7 @@ function SortableItemList({
   onDragStart, onDragEnd,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
   onUpdateText, onUpdateDueDate, onMove,
+  selectMode, selectedIds, onLongPress, onToggleSelect,
 }: SortableItemListProps) {
   return (
     <DndContext
@@ -601,6 +745,10 @@ function SortableItemList({
             onUpdateText={(text) => onUpdateText(item.id, text)}
             onUpdateDueDate={(date) => onUpdateDueDate(item.id, date)}
             onMove={item.type === "todo" ? () => onMove(item.id) : undefined}
+            selectMode={selectMode}
+            isSelected={selectedIds.has(item.id)}
+            onLongPress={() => onLongPress(item.id)}
+            onToggleSelect={() => onToggleSelect(item.id)}
           />
         ))}
       </SortableContext>
@@ -617,6 +765,10 @@ function SortableItemList({
             onDelete={() => {}}
             onUpdateText={() => {}}
             onUpdateDueDate={() => {}}
+            selectMode={false}
+            isSelected={false}
+            onLongPress={() => {}}
+            onToggleSelect={() => {}}
           />
         ) : null}
       </DragOverlay>
@@ -639,12 +791,17 @@ interface NoteItemRowProps {
   onUpdateText: (text: string) => void
   onUpdateDueDate: (date: string) => void
   onMove?: () => void
+  selectMode?: boolean
+  isSelected?: boolean
+  onLongPress?: () => void
+  onToggleSelect?: () => void
 }
 
 function NoteItemRow({
   item, categoryColor, sortable = false, isOverlay, highlighted,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
   onUpdateText, onUpdateDueDate, onMove,
+  selectMode = false, isSelected = false, onLongPress, onToggleSelect,
 }: NoteItemRowProps) {
   const {
     attributes,
@@ -653,7 +810,7 @@ function NoteItemRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id, disabled: !sortable })
+  } = useSortable({ id: item.id, disabled: !sortable || selectMode })
 
   const dndStyle = {
     transform: CSS.Transform.toString(transform),
@@ -670,6 +827,7 @@ function NoteItemRow({
   const touchIsHorizontal = useRef<boolean | null>(null)
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasVibratedSwipe = useRef(false)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (confirmDelete) {
@@ -699,6 +857,19 @@ function NoteItemRow({
     }
   }
 
+  // Long-press to enter select mode
+  const handleRowTouchStart = (e: React.TouchEvent) => {
+    if (selectMode) return
+    longPressTimer.current = setTimeout(() => {
+      onLongPress?.()
+    }, 500)
+    // Also run swipe logic
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+    touchIsHorizontal.current = null
+    hasVibratedSwipe.current = false
+  }
+
   // Swipe-to-delete — only activates on horizontal swipe, cancels drag
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
@@ -707,6 +878,8 @@ function NoteItemRow({
     hasVibratedSwipe.current = false
   }
   const handleTouchMove = (e: React.TouchEvent) => {
+    // Cancel long-press if user moves finger
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
     if (touchStartX.current === null || touchStartY.current === null) return
     const dx = e.touches[0].clientX - touchStartX.current
     const dy = e.touches[0].clientY - touchStartY.current
@@ -718,6 +891,7 @@ function NoteItemRow({
 
     // Only handle horizontal swipes — vertical is scroll/drag
     if (!touchIsHorizontal.current) return
+    if (selectMode) return // no swipe-delete in select mode
 
     if (dx < 0) {
       const newOffset = Math.max(-80, dx)
@@ -731,7 +905,8 @@ function NoteItemRow({
     }
   }
   const handleTouchEnd = () => {
-    setSwipeOffset(swipeOffset < -40 ? -80 : 0)
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
+    if (!selectMode) setSwipeOffset(swipeOffset < -40 ? -80 : 0)
     touchStartX.current = null
     touchStartY.current = null
     touchIsHorizontal.current = null
@@ -749,27 +924,47 @@ function NoteItemRow({
       className={cn(
         "relative overflow-hidden",
         isDragging && !isOverlay && "opacity-30",
-        isOverlay && "shadow-2xl rounded-xl opacity-95 scale-[1.02]"
+        isOverlay && "shadow-2xl rounded-xl opacity-95 scale-[1.02]",
+        isSelected && "bg-primary/5"
       )}
-      onTouchStart={handleTouchStart}
+      onTouchStart={handleRowTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Swipe-to-delete background */}
-      <div className="absolute inset-y-0 right-0 w-20 flex items-center justify-center bg-destructive">
-        <Trash2 className="w-5 h-5 text-white" />
-      </div>
+      {/* Swipe-to-delete background — hidden in select mode */}
+      {!selectMode && (
+        <div className="absolute inset-y-0 right-0 w-20 flex items-center justify-center bg-destructive">
+          <Trash2 className="w-5 h-5 text-white" />
+        </div>
+      )}
 
       <div
         className={cn(
           "flex items-center gap-1 px-2 py-1 bg-card transition-all select-none",
-          highlighted && "bg-primary/10"
+          highlighted && "bg-primary/10",
+          isSelected && "bg-primary/8"
         )}
-        style={{ transform: `translateX(${swipeOffset}px)` }}
-        onClick={() => swipeOffset < 0 ? setSwipeOffset(0) : undefined}
+        style={{ transform: selectMode ? undefined : `translateX(${swipeOffset}px)` }}
+        onClick={() => {
+          if (selectMode) { onToggleSelect?.(); return }
+          if (swipeOffset < 0) setSwipeOffset(0)
+        }}
       >
-        {/* Grip handle — only shown when sortable */}
-        {sortable ? (
+        {/* Select checkbox (select mode) OR grip handle (normal mode) */}
+        {selectMode ? (
+          <div className="flex-shrink-0 flex items-center justify-center w-8 h-11">
+            {item.type === "todo" ? (
+              <div className={cn(
+                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                isSelected ? "bg-primary border-primary" : "border-muted-foreground/40"
+              )}>
+                {isSelected && <span className="text-primary-foreground text-[10px] font-bold">✓</span>}
+              </div>
+            ) : (
+              <div className="w-5 h-5 rounded border-2 border-muted-foreground/20" />
+            )}
+          </div>
+        ) : sortable ? (
           <div
             {...attributes}
             {...listeners}
@@ -783,11 +978,12 @@ function NoteItemRow({
 
         {/* Checkbox / indicator — 44px tap target */}
         <div className="flex-shrink-0 flex items-center justify-center w-11 h-11">
-          {item.type === "todo" && (
+          {item.type === "todo" && !selectMode && (
             <div
               role="button"
               tabIndex={0}
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 if (!item.completed) {
                   setJustCompleted(true)
                   setTimeout(() => setJustCompleted(false), 600)
@@ -812,13 +1008,14 @@ function NoteItemRow({
               />
             </div>
           )}
+          {item.type === "todo" && selectMode && <div className="w-11 h-11" />}
           {item.type === "header" && <div className="w-1 h-4 rounded-full" style={{ backgroundColor: categoryColor }} />}
           {item.type === "text" && <AlignLeft className="w-3.5 h-3.5 text-muted-foreground/30" />}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0 py-2">
-          {editing ? (
+          {editing && !selectMode ? (
             item.type === "text" ? (
               <textarea
                 autoFocus
@@ -844,18 +1041,30 @@ function NoteItemRow({
               />
             )
           ) : (
-            <p
-              onClick={() => { setEditText(item.text); setEditing(true) }}
-              className={cn(
-                "cursor-pointer select-none leading-snug",
-                item.type === "header" && "text-base font-semibold tracking-tight",
-                item.type === "text" && "text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap",
-                item.type === "todo" && "text-sm",
-                item.type === "todo" && item.completed && "line-through text-muted-foreground"
+            <div className="flex items-center gap-1.5 group">
+              <p
+                onClick={(e) => {
+                  if (selectMode) return
+                  e.stopPropagation()
+                  setEditText(item.text)
+                  setEditing(true)
+                }}
+                className={cn(
+                  "leading-snug flex-1",
+                  !selectMode && "cursor-pointer select-none",
+                  item.type === "header" && "text-base font-semibold tracking-tight",
+                  item.type === "text" && "text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap",
+                  item.type === "todo" && "text-sm",
+                  item.type === "todo" && item.completed && "line-through text-muted-foreground"
+                )}
+              >
+                {item.text}
+              </p>
+              {/* Edit affordance — subtle pencil shown on hover/focus, not in select mode */}
+              {!selectMode && !item.completed && (
+                <Pencil className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground/30 transition-colors flex-shrink-0" />
               )}
-            >
-              {item.text}
-            </p>
+            </div>
           )}
 
           {item.type === "todo" && (

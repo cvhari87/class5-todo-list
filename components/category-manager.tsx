@@ -29,7 +29,7 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
   const [internalOpen, setInternalOpen] = useState(false)
   const open = externalOpen !== undefined ? externalOpen : internalOpen
   const setOpen = (v: boolean) => {
-    setInternalOpen(v)
+    if (externalOpen === undefined) setInternalOpen(v)
     onOpenChange?.(v)
   }
   const [name, setName] = useState("")
