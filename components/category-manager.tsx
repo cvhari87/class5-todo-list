@@ -67,77 +67,69 @@ export function CategoryManager({ onAddCategory, open: externalOpen, onOpenChang
         <span className="font-medium">New Note</span>
       </button>
 
-      {/* Bottom sheet overlay */}
+      {/* Centered dialog — stays above keyboard on iOS */}
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex flex-col justify-end" style={{ height: '100dvh' }}>
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-start px-4 pt-[max(5rem,env(safe-area-inset-top))]">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={() => setOpen(false)}
           />
 
-          {/* Sheet */}
-          <div className="relative bg-card rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300">
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 rounded-full bg-border" />
-            </div>
-
-            {/* Content */}
-            <div className="px-5 pt-2 pb-[max(5rem,env(safe-area-inset-bottom))]">
-              {/* Header */}
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">New Note</h2>
-                <button
-                  onClick={() => setOpen(false)}
-                  className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Name input */}
-              <Input
-                placeholder="Note name (e.g. Work, Health)"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={handleKeyDown}
-                autoFocus
-                className="h-11 text-base rounded-xl mb-3"
-              />
-
-              {/* Color picker */}
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-sm text-muted-foreground shrink-0">Color</span>
-                <div className="flex gap-2 flex-1">
-                  {PRESET_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => { haptics.light(); setSelectedColor(color) }}
-                      className={cn(
-                        "w-6 h-6 rounded-full shrink-0 transition-transform active:scale-90",
-                        selectedColor === color && "scale-110"
-                      )}
-                      style={{
-                        backgroundColor: color,
-                        outline: selectedColor === color ? `3px solid ${color}` : undefined,
-                        outlineOffset: selectedColor === color ? "2px" : undefined,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Create button — in natural flow, always above keyboard */}
+          {/* Dialog card */}
+          <div className="relative w-full max-w-sm bg-card rounded-3xl shadow-2xl p-5 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">New Note</h2>
               <button
-                onClick={handleSubmit}
-                disabled={!name.trim()}
-                className="w-full h-14 rounded-2xl font-semibold text-base transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white"
-                style={{ backgroundColor: name.trim() ? selectedColor : "#88888888" }}
+                onClick={() => setOpen(false)}
+                className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground"
               >
-                Create Note
+                <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Name input */}
+            <Input
+              placeholder="Note name (e.g. Work, Health)"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              autoFocus
+              className="h-11 text-base rounded-xl mb-4"
+            />
+
+            {/* Color picker */}
+            <div className="flex items-center gap-3 mb-5">
+              <span className="text-sm text-muted-foreground shrink-0">Color</span>
+              <div className="flex gap-2 flex-1">
+                {PRESET_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => { haptics.light(); setSelectedColor(color) }}
+                    className={cn(
+                      "w-6 h-6 rounded-full shrink-0 transition-transform active:scale-90",
+                      selectedColor === color && "scale-110"
+                    )}
+                    style={{
+                      backgroundColor: color,
+                      outline: selectedColor === color ? `3px solid ${color}` : undefined,
+                      outlineOffset: selectedColor === color ? "2px" : undefined,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Create button */}
+            <button
+              onClick={handleSubmit}
+              disabled={!name.trim()}
+              className="w-full h-14 rounded-2xl font-semibold text-base transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white"
+              style={{ backgroundColor: name.trim() ? selectedColor : "#88888888" }}
+            >
+              Create Note
+            </button>
           </div>
         </div>
       )}
