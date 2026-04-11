@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import {
   DndContext,
@@ -807,18 +807,36 @@ function NoteItemRow({
                   )}
                 </div>
               ) : item.dueDate ? (
-                <button
-                  onClick={() => setEditingDate(true)}
-                  className={cn(
-                    "flex items-center gap-1 text-xs py-0.5",
-                    isOverdue && "text-red-500 font-medium",
-                    isDueToday && "text-orange-500 font-medium",
-                    !isOverdue && !isDueToday && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarDays className="w-3 h-3" />
-                  {isOverdue ? "Overdue · " : isDueToday ? "Due today · " : "Due "}{item.dueDate}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setEditingDate(true)}
+                    className={cn(
+                      "flex items-center gap-1 text-xs py-0.5",
+                      isOverdue && "text-red-500 font-medium",
+                      isDueToday && "text-orange-500 font-medium",
+                      !isOverdue && !isDueToday && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarDays className="w-3 h-3" />
+                    {isOverdue ? "Overdue · " : isDueToday ? "Due today · " : "Due "}{item.dueDate}
+                  </button>
+                  {/* Add to Google Calendar — opens gcal URL in browser */}
+                  <a
+                    href={(() => {
+                      const dateStr = item.dueDate.replace(/-/g, "")
+                      const title = encodeURIComponent(item.text)
+                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${dateStr}&details=Added+from+Notes+app`
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => { e.stopPropagation(); haptics.light() }}
+                    className="flex items-center gap-0.5 text-[10px] text-muted-foreground/60 hover:text-primary transition-colors py-0.5"
+                    title="Add to Google Calendar"
+                  >
+                    <ExternalLink className="w-2.5 h-2.5" />
+                    <span>GCal</span>
+                  </a>
+                </div>
               ) : (
                 <button
                   onClick={() => setEditingDate(true)}

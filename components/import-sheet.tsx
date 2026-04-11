@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import { X, Upload, ChevronRight, Plus, Check, AlertCircle, Type, AlignLeft, Sparkles, Loader2 } from "lucide-react"
+import { useState, useCallback, useRef } from "react"
+import { X, Upload, ChevronRight, Plus, Check, AlertCircle, Type, AlignLeft, Sparkles, Loader2, Camera, Image as ImageIcon } from "lucide-react"
 import { Category, TodoItem, ItemType } from "@/lib/types"
 import { generateId } from "@/lib/store"
 import { parseAppleNotesText, ParsedImportItem } from "@/lib/import-parser"
@@ -56,6 +56,12 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
   const [aiSuggestedCategory, setAiSuggestedCategory] = useState<string>("")
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  // Image import
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [imageMimeType, setImageMimeType] = useState<string>("image/jpeg")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   // New category inline creation
   const [creatingNew, setCreatingNew] = useState(false)
@@ -73,6 +79,9 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     setAiSuggestedCategory("")
     setAiError(null)
     setAiLoading(false)
+    setImagePreview(null)
+    setImageBase64(null)
+    setImageMimeType("image/jpeg")
   }, [categories])
 
   const handleClose = () => {
@@ -90,9 +99,33 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     setStep("preview")
   }
 
-  // ── Step 1 → 2: AI auto-categorize ──────────────────────────────────────
+  // ── Handle image file selection ──────────────────────────────────────────
+  const handleImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return
+    setImageMimeType(file.type)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      // dataUrl = "data:image/jpeg;base64,XXXX" — strip the prefix
+      const base64 = dataUrl.split(",")[1]
+      setImageBase64(base64)
+      setImagePreview(dataUrl)
+      setRawText("") // clear text when image is selected
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const clearImage = () => {
+    setImagePreview(null)
+    setImageBase64(null)
+    setImageMimeType("image/jpeg")
+    if (fileInputRef.current) fileInputRef.current.value = ""
+    if (cameraInputRef.current) cameraInputRef.current.value = ""
+  }
+
+  // ── Step 1 → 2: AI auto-categorize (text or image) ──────────────────────
   const handleAiCategorize = async () => {
-    if (!rawText.trim()) return
+    if (!rawText.trim() && !imageBase64) return
     haptics.light()
     setAiLoading(true)
     setAiError(null)
@@ -103,16 +136,17 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
       if (!currentUser) throw new Error("Not signed in")
       const idToken = await currentUser.getIdToken()
 
+      const body = imageBase64
+        ? { imageBase64, imageMimeType, existingCategories: categories.map(c => c.name) }
+        : { text: rawText, existingCategories: categories.map(c => c.name) }
+
       const res = await fetch("/api/categorize", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          text: rawText,
-          existingCategories: categories.map(c => c.name),
-        }),
+        body: JSON.stringify(body),
       })
 
       if (!res.ok) {
@@ -279,18 +313,70 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
         {/* ── STEP 1: Paste ── */}
         {step === "paste" && (
           <div className="flex flex-col flex-1 overflow-hidden px-5 pb-5 gap-4">
-            <textarea
-              className="flex-1 min-h-[200px] w-full rounded-xl bg-secondary/60 border border-border p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground font-mono"
-              placeholder={"Paste your Apple Notes text here…\n\nExamples:\n• Buy groceries\n- Call dentist\n✓ Already done task\nTODAY'S GOALS\n[ ] New task"}
-              value={rawText}
-              onChange={e => setRawText(e.target.value)}
-              autoFocus
+
+            {/* Hidden file inputs */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f) }}
             />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f) }}
+            />
+
+            {/* Image preview OR text area */}
+            {imagePreview ? (
+              <div className="relative flex-1 min-h-[200px] rounded-xl overflow-hidden border border-border bg-secondary/40 flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imagePreview} alt="Selected" className="w-full object-contain max-h-[240px]" />
+                <button
+                  onClick={clearImage}
+                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <textarea
+                className="flex-1 min-h-[160px] w-full rounded-xl bg-secondary/60 border border-border p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground font-mono"
+                placeholder={"Paste your Apple Notes text here…\n\nExamples:\n• Buy groceries\n- Call dentist\n✓ Already done task\nTODAY'S GOALS\n[ ] New task"}
+                value={rawText}
+                onChange={e => setRawText(e.target.value)}
+                autoFocus
+              />
+            )}
+
+            {/* Photo import buttons (AI mode only) */}
+            {importMode === "ai" && !imagePreview && (
+              <div className="flex gap-2 -mt-1">
+                <button
+                  onClick={() => { haptics.light(); cameraInputRef.current?.click() }}
+                  className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-medium transition-colors border border-border"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  Take Photo
+                </button>
+                <button
+                  onClick={() => { haptics.light(); fileInputRef.current?.click() }}
+                  className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-secondary/80 text-muted-foreground hover:text-foreground text-xs font-medium transition-colors border border-border"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Choose Photo
+                </button>
+              </div>
+            )}
 
             {/* Mode toggle */}
             <div className="flex rounded-xl bg-secondary/60 p-1 gap-1 flex-shrink-0">
               <button
-                onClick={() => setImportMode("ai")}
+                onClick={() => { setImportMode("ai"); clearImage() }}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-sm font-medium transition-all",
                   importMode === "ai"
@@ -302,7 +388,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
                 Auto with AI
               </button>
               <button
-                onClick={() => setImportMode("manual")}
+                onClick={() => { setImportMode("manual"); clearImage() }}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-sm font-medium transition-all",
                   importMode === "manual"
@@ -323,18 +409,18 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
 
             <button
               onClick={importMode === "ai" ? handleAiCategorize : handleParse}
-              disabled={!rawText.trim() || aiLoading}
+              disabled={(!rawText.trim() && !imageBase64) || aiLoading}
               className="w-full h-14 rounded-2xl font-semibold text-base bg-primary text-primary-foreground transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {aiLoading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Analyzing with AI…
+                  {imageBase64 ? "Reading image…" : "Analyzing with AI…"}
                 </>
               ) : importMode === "ai" ? (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  Auto-Categorize
+                  {imageBase64 ? "Extract from Image" : "Auto-Categorize"}
                 </>
               ) : (
                 <>
