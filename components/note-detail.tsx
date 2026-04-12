@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput, Pencil, CheckCheck, Square } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput, Pencil, CheckCheck, Square, Share2, ListTodo, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import {
   DndContext,
@@ -289,6 +289,24 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
     return () => { if (confirmNoteTimer.current) clearTimeout(confirmNoteTimer.current) }
   }, [])
 
+  // ── Share note as text ────────────────────────────────────────────────────
+  const handleShare = async () => {
+    haptics.light()
+    const lines: string[] = [`📋 ${category.name}`, ""]
+    for (const item of category.items) {
+      if (item.type === "header") lines.push(`\n## ${item.text}`)
+      else if (item.type === "text") lines.push(item.text)
+      else lines.push(`${item.completed ? "✅" : "☐"} ${item.text}${item.flagged ? " 🚩" : ""}`)
+    }
+    const text = lines.join("\n")
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share({ title: category.name, text }) } catch { /* cancelled */ }
+    } else {
+      try { await navigator.clipboard.writeText(text); toast("Copied to clipboard") }
+      catch { toast.error("Share not supported on this device") }
+    }
+  }
+
   const sortLabels: Record<SortOrder, string> = {
     default: "Default", flagged: "Flagged first", incomplete: "Incomplete first", alpha: "A → Z",
   }
@@ -445,10 +463,23 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
           </div>
         )}
 
+        {/* ── Empty state ── */}
         {category.items.length === 0 && !addingType && (
-          <div className="flex flex-col items-center justify-center py-16 px-4">
-            <p className="text-muted-foreground text-center">This note is empty</p>
-            <p className="text-sm text-muted-foreground/70 text-center mt-1">Tap + to add items</p>
+          <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+            <div
+              className="w-20 h-20 rounded-3xl flex items-center justify-center mb-5 shadow-sm"
+              style={{ backgroundColor: category.color + "18" }}
+            >
+              <ListTodo className="w-9 h-9" style={{ color: category.color }} />
+            </div>
+            <h3 className="text-base font-semibold text-foreground mb-1">Nothing here yet</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-[220px]">
+              Tap <span className="font-semibold text-foreground">+</span> below to add your first todo, header, or note.
+            </p>
+            <div className="flex items-center gap-1.5 mt-5 text-xs text-muted-foreground/60">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Tip: long-press any item to select multiple</span>
+            </div>
           </div>
         )}
 
@@ -554,17 +585,29 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
           ) : (
             /* ── Normal toolbar ── */
             <>
-              {/* Sort button — opens bottom sheet */}
-              <button
-                onClick={() => { haptics.light(); setShowSortMenu(s => !s) }}
-                className={cn(
-                  "flex items-center gap-1.5 h-10 px-3 rounded-xl transition-colors",
-                  sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                )}
-              >
-                <ArrowUpDown className="w-4 h-4" />
-                <span className="text-xs">{sortLabels[sortOrder]}</span>
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Sort button — opens bottom sheet */}
+                <button
+                  onClick={() => { haptics.light(); setShowSortMenu(s => !s) }}
+                  className={cn(
+                    "flex items-center gap-1.5 h-10 px-3 rounded-xl transition-colors",
+                    sortOrder !== "default" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  )}
+                >
+                  <ArrowUpDown className="w-4 h-4" />
+                  <span className="text-xs">{sortLabels[sortOrder]}</span>
+                </button>
+
+                {/* Share button */}
+                <button
+                  onClick={handleShare}
+                  className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  aria-label="Share note"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span className="text-xs">Share</span>
+                </button>
+              </div>
 
               {/* Add button — 48px, prominent */}
               <div className="relative">
@@ -828,6 +871,7 @@ function NoteItemRow({
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasVibratedSwipe = useRef(false)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const swipeDirection = useRef<"left" | "right" | null>(null)
 
   useEffect(() => {
     if (confirmDelete) {
@@ -891,25 +935,46 @@ function NoteItemRow({
 
     // Only handle horizontal swipes — vertical is scroll/drag
     if (!touchIsHorizontal.current) return
-    if (selectMode) return // no swipe-delete in select mode
+    if (selectMode) return // no swipe in select mode
 
-    if (dx < 0) {
+    if (swipeDirection.current === null) {
+      swipeDirection.current = dx < 0 ? "left" : "right"
+    }
+
+    if (swipeDirection.current === "left") {
+      // Left swipe → delete (red, right side)
       const newOffset = Math.max(-80, dx)
       if (newOffset <= -40 && !hasVibratedSwipe.current) {
         haptics.medium()
         hasVibratedSwipe.current = true
       }
       setSwipeOffset(newOffset)
-    } else if (swipeOffset < 0) {
-      setSwipeOffset(Math.min(0, swipeOffset + dx))
+    } else if (swipeDirection.current === "right" && item.type === "todo" && !item.completed) {
+      // Right swipe → complete (green, left side)
+      const newOffset = Math.min(80, dx)
+      if (newOffset >= 40 && !hasVibratedSwipe.current) {
+        haptics.success()
+        hasVibratedSwipe.current = true
+      }
+      setSwipeOffset(newOffset)
     }
   }
   const handleTouchEnd = () => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
-    if (!selectMode) setSwipeOffset(swipeOffset < -40 ? -80 : 0)
+    if (!selectMode) {
+      if (swipeDirection.current === "left") {
+        setSwipeOffset(swipeOffset < -40 ? -80 : 0)
+      } else if (swipeDirection.current === "right" && swipeOffset >= 40) {
+        onToggleComplete()
+        setSwipeOffset(0)
+      } else {
+        setSwipeOffset(0)
+      }
+    }
     touchStartX.current = null
     touchStartY.current = null
     touchIsHorizontal.current = null
+    swipeDirection.current = null
   }
 
   const today = new Date().toISOString().split("T")[0]
@@ -931,9 +996,23 @@ function NoteItemRow({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Swipe-to-delete background — hidden in select mode */}
+      {/* Right-swipe complete background (green, left side) */}
+      {!selectMode && item.type === "todo" && !item.completed && (
+        <div
+          className="absolute inset-y-0 left-0 w-20 flex items-center justify-center bg-green-500"
+          style={{ opacity: swipeOffset > 0 ? Math.min(1, swipeOffset / 40) : 0 }}
+        >
+          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+      )}
+      {/* Left-swipe delete background (red, right side) */}
       {!selectMode && (
-        <div className="absolute inset-y-0 right-0 w-20 flex items-center justify-center bg-destructive">
+        <div
+          className="absolute inset-y-0 right-0 w-20 flex items-center justify-center bg-destructive"
+          style={{ opacity: swipeOffset < 0 ? Math.min(1, Math.abs(swipeOffset) / 40) : 0 }}
+        >
           <Trash2 className="w-5 h-5 text-white" />
         </div>
       )}
@@ -947,7 +1026,7 @@ function NoteItemRow({
         style={{ transform: selectMode ? undefined : `translateX(${swipeOffset}px)` }}
         onClick={() => {
           if (selectMode) { onToggleSelect?.(); return }
-          if (swipeOffset < 0) setSwipeOffset(0)
+          if (swipeOffset !== 0) setSwipeOffset(0)
         }}
       >
         {/* Select checkbox (select mode) OR grip handle (normal mode) */}
