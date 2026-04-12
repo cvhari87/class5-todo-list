@@ -435,23 +435,38 @@ export default function TodoApp() {
     toast(`Moved to ${categories.find(c => c.id === toCategoryId)?.name ?? "note"}`)
   }
 
+  const handleReorderCategoryItems = (categoryId: string, reorderedItemIds: string[]) => {
+    let updatedCat: Category | null = null
+    setCategories(prev => {
+      const cat = prev.find(c => c.id === categoryId)
+      if (!cat) return prev
+      const idOrder = new Map(reorderedItemIds.map((id, i) => [id, i]))
+      const reordered = [...cat.items].sort((a, b) => (idOrder.get(a.id) ?? Infinity) - (idOrder.get(b.id) ?? Infinity))
+      updatedCat = { ...cat, items: reordered }
+      return prev.map(c => c.id === categoryId ? updatedCat! : c)
+    })
+    if (userRef.current && updatedCat) fsRef.current?.saveCategoryToFirestore(userRef.current.uid, updatedCat)
+  }
+
   const handleBulkMoveItems = (fromCategoryId: string, itemIds: string[], toCategoryId: string) => {
+    let updatedFrom: Category | null = null
+    let updatedTo: Category | null = null
     setCategories(prev => {
       const fromCat = prev.find(c => c.id === fromCategoryId)
       const toCat = prev.find(c => c.id === toCategoryId)
       if (!fromCat || !toCat) return prev
       const movingItems = fromCat.items.filter(i => itemIds.includes(i.id))
       if (movingItems.length === 0) return prev
-      const updatedFrom = { ...fromCat, items: fromCat.items.filter(i => !itemIds.includes(i.id)) }
-      const updatedTo = { ...toCat, items: [...toCat.items, ...movingItems] }
-      if (userRef.current) {
-        fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedFrom)
-        fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedTo)
-      }
+      updatedFrom = { ...fromCat, items: fromCat.items.filter(i => !itemIds.includes(i.id)) }
+      updatedTo = { ...toCat, items: [...toCat.items, ...movingItems] }
       return prev.map(c =>
-        c.id === fromCategoryId ? updatedFrom : c.id === toCategoryId ? updatedTo : c
+        c.id === fromCategoryId ? updatedFrom! : c.id === toCategoryId ? updatedTo! : c
       )
     })
+    if (userRef.current && updatedFrom && updatedTo) {
+      fsRef.current?.saveCategoryToFirestore(userRef.current.uid, updatedFrom)
+      fsRef.current?.saveCategoryToFirestore(userRef.current.uid, updatedTo)
+    }
   }
 
   const handleSelectCategory = (categoryId: string) => {
@@ -805,6 +820,7 @@ export default function TodoApp() {
                     onDeleteItem={handleDeleteItem}
                     onArchiveItem={handleArchiveItem}
                     onArchiveAllCompleted={handleArchiveAllCompleted}
+                    onReorderCategory={handleReorderCategoryItems}
                     searchQuery={searchActive ? searchQuery : ""}
                   />
                 </div>

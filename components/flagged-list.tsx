@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useRef } from "react"
 import {
   Flag, GripVertical, RefreshCw, CheckCircle2, ChevronDown,
   Trash2, Archive, AlertCircle, ArrowUpDown, SlidersHorizontal, CalendarDays,
@@ -44,6 +44,8 @@ interface FlaggedListProps {
   onDeleteItem: (categoryId: string, itemId: string) => void
   onArchiveItem: (categoryId: string, itemId: string) => void
   onArchiveAllCompleted: () => void
+  /** Called when the user manually reorders items within a category — persists order back to store */
+  onReorderCategory: (categoryId: string, reorderedItemIds: string[]) => void
   searchQuery?: string
 }
 
@@ -261,17 +263,10 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragg
           </p>
           {!item.completed && <DueDateBadge dueDate={item.dueDate} />}
         </div>
-        {!showRecurringIcon && !item.completed && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
-            <span className="text-xs text-muted-foreground">{category.name}</span>
-            {item.dueDate && getDueDateStatus(item.dueDate) === null && (
-              <>
-                <span className="text-muted-foreground/40 text-xs">·</span>
-                <CalendarDays className="w-3 h-3 text-muted-foreground/50" />
-                <span className="text-xs text-muted-foreground/60">{item.dueDate}</span>
-              </>
-            )}
+        {!showRecurringIcon && !item.completed && item.dueDate && getDueDateStatus(item.dueDate) === null && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <CalendarDays className="w-3 h-3 text-muted-foreground/50" />
+            <span className="text-xs text-muted-foreground/60">{item.dueDate}</span>
           </div>
         )}
       </div>
@@ -350,21 +345,36 @@ function SortableSection({ items, onReorder, onToggleComplete, onSelectItem, onD
 export function FlaggedList({
   flaggedItems, recurringItems,
   onToggleComplete, onSelectItem, onDeleteItem, onArchiveItem, onArchiveAllCompleted,
+  onReorderCategory,
   searchQuery = "",
 }: FlaggedListProps) {
-  const [orderedFlagged, setOrderedFlagged] = useState<FlaggedItem[]>(flaggedItems)
-  const [orderedRecurring, setOrderedRecurring] = useState<FlaggedItem[]>(recurringItems)
+  // Store only IDs for ordering — items always come from fresh props so data is never stale
+  const [flaggedOrderedIds, setFlaggedOrderedIds] = useState(() => flaggedItems.map(fi => fi.item.id))
+  const [recurringOrderedIds, setRecurringOrderedIds] = useState(() => recurringItems.map(fi => fi.item.id))
   const [showCompletedToday, setShowCompletedToday] = useState(true)
   const [showCompletedFlagged, setShowCompletedFlagged] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>("manual")
   const [showSortMenu, setShowSortMenu] = useState(false)
 
-  useEffect(() => { setOrderedFlagged(flaggedItems) }, [flaggedItems])
-  useEffect(() => { setOrderedRecurring(recurringItems) }, [recurringItems])
+  // Helper: sort a FlaggedItem[] by a stored ID order; unknown IDs go to the end
+  const sortByIds = (items: FlaggedItem[], ids: string[]) => {
+    const idIndex = new Map(ids.map((id, i) => [id, i]))
+    return [...items].sort((a, b) => (idIndex.get(a.item.id) ?? Infinity) - (idIndex.get(b.item.id) ?? Infinity))
+  }
 
-  // Apply sort to active flagged items
-  const activeFlaggedRaw = orderedFlagged.filter(fi => !fi.item.completed)
-  const completedFlagged = orderedFlagged.filter(fi => fi.item.completed)
+  // Helper: update stored IDs after a per-category reorder, preserving positions of other categories
+  const spliceCategory = (prev: string[], categoryIds: Set<string>, reorderedIds: string[]) => {
+    const firstIdx = prev.findIndex(id => categoryIds.has(id))
+    const without = prev.filter(id => !categoryIds.has(id))
+    const insertAt = firstIdx === -1 ? without.length : Math.min(firstIdx, without.length)
+    return [...without.slice(0, insertAt), ...reorderedIds, ...without.slice(insertAt)]
+  }
+
+  const sortedFlagged = sortByIds(flaggedItems, flaggedOrderedIds)
+  const sortedRecurring = sortByIds(recurringItems, recurringOrderedIds)
+
+  const activeFlaggedRaw = sortedFlagged.filter(fi => !fi.item.completed)
+  const completedFlagged = sortedFlagged.filter(fi => fi.item.completed)
 
   const activeFlagged = (() => {
     if (sortMode === "manual") return activeFlaggedRaw
@@ -379,12 +389,19 @@ export function FlaggedList({
     return sorted
   })()
 
-  const incompleteDaily = orderedRecurring.filter(fi => !fi.item.completed)
-  const completedToday = orderedRecurring.filter(fi => fi.item.completed)
+  const incompleteDaily = sortedRecurring.filter(fi => !fi.item.completed)
+  const completedToday = sortedRecurring.filter(fi => fi.item.completed)
   const isSearching = searchQuery.trim().length > 0
-  const isEmpty = orderedRecurring.length === 0 && orderedFlagged.length === 0
+  const isEmpty = recurringItems.length === 0 && flaggedItems.length === 0
 
   const categoryGroups = incompleteDaily.reduce<{ category: Category; items: FlaggedItem[] }[]>((groups, fi) => {
+    const existing = groups.find(g => g.category.id === fi.category.id)
+    if (existing) { existing.items.push(fi) } else { groups.push({ category: fi.category, items: [fi] }) }
+    return groups
+  }, [])
+
+  // Group active flagged items by category (same pattern as Daily Goals)
+  const flaggedCategoryGroups = activeFlagged.reduce<{ category: Category; items: FlaggedItem[] }[]>((groups, fi) => {
     const existing = groups.find(g => g.category.id === fi.category.id)
     if (existing) { existing.items.push(fi) } else { groups.push({ category: fi.category, items: [fi] }) }
     return groups
@@ -423,7 +440,7 @@ export function FlaggedList({
   return (
     <div>
       {/* ── Daily Goals section ── */}
-      {orderedRecurring.length > 0 && (
+      {recurringItems.length > 0 && (
         <div>
           <div className="flex items-center justify-between px-4 py-2 bg-background/50">
             <div className="flex items-center gap-2">
@@ -431,14 +448,14 @@ export function FlaggedList({
               <span className="text-xs font-semibold text-green-600 uppercase tracking-wide">Daily Goals</span>
             </div>
             <span className="text-xs text-muted-foreground">
-              {completedToday.length}/{orderedRecurring.length} done
+              {completedToday.length}/{recurringItems.length} done
             </span>
           </div>
 
           <div className="mx-4 mb-3 h-1.5 bg-secondary rounded-full overflow-hidden">
             <div
               className="h-full bg-green-500 rounded-full transition-all duration-500"
-              style={{ width: `${(completedToday.length / orderedRecurring.length) * 100}%` }}
+              style={{ width: `${(completedToday.length / recurringItems.length) * 100}%` }}
             />
           </div>
 
@@ -453,11 +470,10 @@ export function FlaggedList({
                   <SortableSection
                     items={items}
                     onReorder={(reordered) => {
-                      setOrderedRecurring(prev => {
-                        const otherItems = prev.filter(fi => fi.category.id !== category.id)
-                        const completedInCat = prev.filter(fi => fi.category.id === category.id && fi.item.completed)
-                        return [...otherItems, ...reordered, ...completedInCat]
-                      })
+                      const reorderedIds = reordered.map(fi => fi.item.id)
+                      const categoryItemIds = new Set(items.map(fi => fi.item.id))
+                      setRecurringOrderedIds(prev => spliceCategory(prev, categoryItemIds, reorderedIds))
+                      onReorderCategory(category.id, reorderedIds)
                     }}
                     onToggleComplete={onToggleComplete}
                     onSelectItem={onSelectItem}
@@ -515,12 +531,12 @@ export function FlaggedList({
       )}
 
       {/* ── Divider ── */}
-      {orderedRecurring.length > 0 && orderedFlagged.length > 0 && (
+      {recurringItems.length > 0 && flaggedItems.length > 0 && (
         <div className="h-3 bg-secondary/30" />
       )}
 
       {/* ── Flagged Items section ── */}
-      {orderedFlagged.length > 0 && (
+      {flaggedItems.length > 0 && (
         <div>
           {/* Section header with sort control */}
           <div className="flex items-center gap-2 px-4 py-2 bg-background/50">
@@ -562,22 +578,28 @@ export function FlaggedList({
             </div>
           </div>
 
-          {/* Active (incomplete) flagged items */}
-          {activeFlagged.length > 0 && (
-            <SortableSection
-              items={activeFlagged}
-              onReorder={(reordered) => {
-                if (sortMode !== "manual") return // only reorder in manual mode
-                setOrderedFlagged(prev => {
-                  const completed = prev.filter(fi => fi.item.completed)
-                  return [...reordered, ...completed]
-                })
-              }}
-              onToggleComplete={onToggleComplete}
-              onSelectItem={onSelectItem}
-              onDeleteItem={onDeleteItem}
-            />
-          )}
+          {/* Active (incomplete) flagged items — grouped by category */}
+          {flaggedCategoryGroups.map(({ category, items }) => (
+            <div key={category.id}>
+              <div className="flex items-center gap-2 px-4 py-1.5">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
+                <span className="text-xs font-medium text-muted-foreground">{category.name}</span>
+              </div>
+              <SortableSection
+                items={items}
+                onReorder={(reordered) => {
+                  if (sortMode !== "manual") return
+                  const reorderedIds = reordered.map(fi => fi.item.id)
+                  const categoryItemIds = new Set(items.map(fi => fi.item.id))
+                  setFlaggedOrderedIds(prev => spliceCategory(prev, categoryItemIds, reorderedIds))
+                  onReorderCategory(category.id, reorderedIds)
+                }}
+                onToggleComplete={onToggleComplete}
+                onSelectItem={onSelectItem}
+                onDeleteItem={onDeleteItem}
+              />
+            </div>
+          ))}
 
           {/* Completed flagged items — collapsible with swipe-to-archive + bulk archive */}
           {completedFlagged.length > 0 && (
