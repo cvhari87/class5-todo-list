@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { generateId, todayString } from "@/lib/store"
 import { haptics } from "@/lib/haptics"
+import { findFuzzyDuplicates } from "@/lib/dedup"
 
 const PRESET_COLORS = [
   "#007AFF", "#34C759", "#FF9500", "#FF3B30",
@@ -178,6 +179,14 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
   const commitNewItem = () => {
     if (!addingType || !newItemText.trim()) { setAddingType(null); return }
     haptics.light()
+    // Fuzzy + cross-category duplicate check
+    if (addingType === "todo") {
+      const dupes = findFuzzyDuplicates([newItemText.trim()], allCategories)
+      const dupe = dupes.get(newItemText.trim())
+      if (dupe) {
+        toast.warning(`Similar to "${dupe.matchedText}" in ${dupe.categoryName}`, { duration: 3000 })
+      }
+    }
     const newItem: TodoItem = {
       id: generateId(),
       text: newItemText.trim(),

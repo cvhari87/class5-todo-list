@@ -16,11 +16,20 @@ function getAdminApp() {
 }
 
 // ── Shared prompt builder ─────────────────────────────────────────────────────
-function buildPrompt(existingCategories: string[], isImage: boolean): string {
+function buildPrompt(
+  existingCategories: string[],
+  existingItems: { text: string; category: string }[],
+  isImage: boolean
+): string {
   const existingList =
     existingCategories.length > 0
       ? `Existing categories: ${existingCategories.map(n => `"${n}"`).join(", ")}.`
       : "There are no existing categories yet."
+
+  const existingItemsList =
+    existingItems.length > 0
+      ? `\nExisting items (for duplicate detection):\n${existingItems.map(i => `- "${i.text}" (in ${i.category})`).join("\n")}`
+      : ""
 
   const inputDesc = isImage
     ? "Analyze the image (whiteboard, handwritten notes, screenshot, or printed text) and extract all visible text/tasks."
@@ -35,14 +44,18 @@ function buildPrompt(existingCategories: string[], isImage: boolean): string {
    - "text": a note, description, or sentence that is not a task
 3. Detect if a line starts with ✓ ✔ ☑ ✅ or is visually checked — mark it completed:true.
 4. Strip bullet characters (-, •, *, [ ], [x]) from the start of lines.
+5. Identify semantic duplicates: for each extracted todo item, check if it means essentially the same thing as any existing item (even if worded differently). Only flag clear semantic matches. Add these to "duplicates".
 
-${existingList}
+${existingList}${existingItemsList}
 
 Return ONLY valid JSON in this exact shape, no markdown, no explanation:
 {
   "suggestedCategory": "string",
   "items": [
     { "text": "cleaned line text", "type": "todo"|"header"|"text", "completed": true|false }
+  ],
+  "duplicates": [
+    { "importText": "extracted item text", "matchedText": "existing item text", "category": "existing category name" }
   ]
 }`
 }
@@ -70,9 +83,10 @@ export async function POST(req: NextRequest) {
     imageBase64?: string   // base64-encoded image data (no data: prefix)
     imageMimeType?: string // e.g. "image/jpeg", "image/png"
     existingCategories: string[]
+    existingItems?: { text: string; category: string }[]
   }
 
-  const { text, imageBase64, imageMimeType, existingCategories } = body
+  const { text, imageBase64, imageMimeType, existingCategories, existingItems } = body
   const isImage = !!imageBase64
 
   if (!isImage && !text?.trim()) {
@@ -88,7 +102,7 @@ export async function POST(req: NextRequest) {
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
 
-  const prompt = buildPrompt(existingCategories ?? [], isImage)
+  const prompt = buildPrompt(existingCategories ?? [], existingItems ?? [], isImage)
 
   // Build content parts — image or text
   const parts: Part[] = isImage

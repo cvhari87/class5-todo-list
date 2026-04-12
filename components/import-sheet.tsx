@@ -5,6 +5,7 @@ import { X, Upload, ChevronRight, Plus, Check, AlertCircle, Type, AlignLeft, Spa
 import { Category, TodoItem, ItemType } from "@/lib/types"
 import { generateId } from "@/lib/store"
 import { parseAppleNotesText, ParsedImportItem } from "@/lib/import-parser"
+import { findFuzzyDuplicates } from "@/lib/dedup"
 import { haptics } from "@/lib/haptics"
 import { cn } from "@/lib/utils"
 import { auth } from "@/lib/firebase"
@@ -95,7 +96,13 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
     haptics.light()
     const parsed = parseAppleNotesText(rawText)
     if (parsed.length === 0) return
-    setItems(parsed)
+    // Fuzzy + cross-category duplicate check
+    const dupeMap = findFuzzyDuplicates(parsed.map(i => i.text), categories)
+    const withDupes = parsed.map(i => {
+      const dupe = dupeMap.get(i.text)
+      return dupe ? { ...i, selected: false, duplicate: dupe } : i
+    })
+    setItems(withDupes)
     setStep("preview")
   }
 
@@ -145,9 +152,13 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
       if (!currentUser) throw new Error("Not signed in")
       const idToken = await currentUser.getIdToken()
 
+      const existingItems = categories.flatMap(c =>
+        c.items.filter(i => i.type === "todo").map(i => ({ text: i.text, category: c.name }))
+      ).slice(0, 100)
+
       const body = imageBase64
-        ? { imageBase64, imageMimeType, existingCategories: categories.map(c => c.name) }
-        : { text: rawText, existingCategories: categories.map(c => c.name) }
+        ? { imageBase64, imageMimeType, existingCategories: categories.map(c => c.name), existingItems }
+        : { text: rawText, existingCategories: categories.map(c => c.name), existingItems }
 
       const res = await fetch("/api/categorize", {
         method: "POST",
@@ -166,19 +177,33 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
       const data = await res.json() as {
         suggestedCategory: string
         items: { text: string; type: ItemType; completed: boolean }[]
+        duplicates?: { importText: string; matchedText: string; category: string }[]
       }
 
-      // Map AI response to ParsedImportItem[]
+      // Build semantic duplicate lookup from AI response
+      const semanticDupes = new Map(
+        (data.duplicates ?? []).map(d => [d.importText, { matchedText: d.matchedText, categoryName: d.category, source: "semantic" as const }])
+      )
+
+      // Map AI response to ParsedImportItem[], then run fuzzy check client-side too
       let _counter = 0
+      const rawParsed = data.items.filter(i => i.text?.trim()).map(i => i.text.trim())
+      const fuzzyDupes = findFuzzyDuplicates(rawParsed, categories)
+
       const parsed: ParsedImportItem[] = data.items
         .filter(i => i.text?.trim())
-        .map(i => ({
-          id: `ai-${Date.now()}-${_counter++}`,
-          text: i.text.trim(),
-          type: i.type ?? "todo",
-          completed: i.completed ?? false,
-          selected: true,
-        }))
+        .map(i => {
+          const text = i.text.trim()
+          const dupe = semanticDupes.get(text) ?? fuzzyDupes.get(text)
+          return {
+            id: `ai-${Date.now()}-${_counter++}`,
+            text,
+            type: i.type ?? "todo",
+            completed: i.completed ?? false,
+            selected: !dupe,
+            duplicate: dupe,
+          }
+        })
 
       if (parsed.length === 0) throw new Error("No items returned from AI")
 
@@ -491,15 +516,23 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
                     {item.selected && <Check className="w-3 h-3 text-primary-foreground" />}
                   </button>
 
-                  {/* Text */}
-                  <span className={cn(
-                    "flex-1 text-sm min-w-0 truncate",
-                    item.type === "header" && "font-semibold",
-                    item.type === "text" && "text-muted-foreground italic",
-                    item.completed && "line-through text-muted-foreground"
-                  )}>
-                    {item.text}
-                  </span>
+                  {/* Text + duplicate warning */}
+                  <div className="flex-1 min-w-0">
+                    <span className={cn(
+                      "text-sm block truncate",
+                      item.type === "header" && "font-semibold",
+                      item.type === "text" && "text-muted-foreground italic",
+                      item.completed && "line-through text-muted-foreground"
+                    )}>
+                      {item.text}
+                    </span>
+                    {item.duplicate && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5 mt-0.5">
+                        <AlertCircle className="w-2.5 h-2.5 flex-shrink-0" />
+                        {item.duplicate.source === "semantic" ? "Similar to" : "Possible duplicate of"} &ldquo;{item.duplicate.matchedText}&rdquo; in {item.duplicate.categoryName}
+                      </span>
+                    )}
+                  </div>
 
                   {/* Type badge — tap to cycle */}
                   <button

@@ -6,6 +6,11 @@ export interface ParsedImportItem {
   type: ItemType      // "todo" | "header" | "text"
   completed: boolean  // true if Apple checkmark detected
   selected: boolean   // user can deselect lines before importing
+  duplicate?: {       // set if a similar item already exists
+    matchedText: string
+    categoryName: string
+    source: "fuzzy" | "semantic"
+  }
 }
 
 // Apple Notes checkmark characters
