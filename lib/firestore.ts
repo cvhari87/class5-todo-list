@@ -11,6 +11,8 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  QuerySnapshot,
+  DocumentData,
   Unsubscribe,
 } from "firebase/firestore"
 import { db } from "./firebase"
@@ -44,14 +46,16 @@ export async function deleteCategoryFromFirestore(uid: string, categoryId: strin
   await deleteDoc(doc(db, "users", uid, "categories", categoryId))
 }
 
-/** Real-time listener — calls onChange whenever Firestore data changes */
+/** Real-time listener — calls onChange whenever Firestore data changes.
+ *  The snapshot is passed so callers can inspect metadata (e.g. hasPendingWrites,
+ *  fromCache) to decide whether to apply the update. */
 export function subscribeToCategories(
   uid: string,
-  onChange: (categories: Category[]) => void
+  onChange: (categories: Category[], snap: QuerySnapshot<DocumentData>) => void
 ): Unsubscribe {
   return onSnapshot(categoriesRef(uid), snap => {
     const cats: Category[] = []
     snap.forEach(d => cats.push(d.data() as Category))
-    onChange(cats.sort((a, b) => a.priority - b.priority))
+    onChange(cats.sort((a, b) => a.priority - b.priority), snap)
   })
 }

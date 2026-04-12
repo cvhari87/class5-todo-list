@@ -281,9 +281,10 @@ export default function TodoApp() {
         if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
         isFirstSnapshot = true
 
-        // Real-time subscription — onSnapshot fires immediately with cached data
-        // (including any pending writes), so there is no stale-read overwrite race.
-        firestoreUnsub.current = subscribeToCategories(firebaseUser.uid, (firestoreCats) => {
+        // Real-time subscription — onSnapshot fires immediately with cached/pending data.
+        // We pass the raw snapshot so we can inspect metadata.hasPendingWrites to avoid
+        // overwriting optimistic local state with a stale echo of our own in-flight write.
+        firestoreUnsub.current = subscribeToCategories(firebaseUser.uid, (firestoreCats, snap) => {
           if (!mounted) return
 
           if (isFirstSnapshot) {
@@ -303,7 +304,13 @@ export default function TodoApp() {
             scheduleDueNotifications(firestoreCats)
             setMounted(true)
           } else {
-            // Subsequent snapshots: our write was confirmed by server, or another device changed data
+            // Skip snapshots that still have pending local writes — these are echoes of our
+            // own optimistic updates and would overwrite the latest local state with a
+            // potentially stale server view before the write is acknowledged.
+            const hasPending = snap.docChanges().some(c => c.doc.metadata.hasPendingWrites)
+            if (hasPending) return
+            // This snapshot is fully server-confirmed (no pending writes) — apply it.
+            // This handles: another device's changes, or our own writes after server ack.
             setCategories(firestoreCats)
             saveCategories(firestoreCats)
           }
