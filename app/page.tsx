@@ -268,7 +268,6 @@ export default function TodoApp() {
   // Auth state listener
   useEffect(() => {
     let mounted = true
-    let isFirstSnapshot = true
 
     const unsub = onAuthStateChanged(auth, (firebaseUser: User | null) => {
       if (!mounted) return
@@ -277,40 +276,47 @@ export default function TodoApp() {
       setAuthChecked(true)
 
       if (firebaseUser) {
-        // Clean up any previous subscription before starting a new one
         if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
-        isFirstSnapshot = true
+        
+        // 1. Load local state synchronously so the app is instantly ready and offline-capable.
+        // getCategories() also handles resetting recurring items locally.
+        const localCats = getCategories()
+        setCategories(localCats)
+        if (isPinEnabled()) setLocked(true)
+        scheduleDueNotifications(localCats)
+        setMounted(true)
 
-        // Real-time subscription — onSnapshot fires immediately with cached/pending data.
-        // We pass the raw snapshot so we can inspect metadata.hasPendingWrites to avoid
-        // overwriting optimistic local state with a stale echo of our own in-flight write.
+        let isFirstServerSnapshot = true
+
+        // 2. Real-time subscription.
         firestoreUnsub.current = subscribeToCategories(firebaseUser.uid, (firestoreCats, snap) => {
           if (!mounted) return
 
-          if (isFirstSnapshot) {
-            isFirstSnapshot = false
+          // Skip cached snapshots entirely. We trust our synchronous localStorage more 
+          // for the initial offline state, as IndexedDB might lag behind if the app is closed quickly.
+          if (snap.metadata.fromCache) return
+
+          if (isFirstServerSnapshot) {
+            isFirstServerSnapshot = false
             if (firestoreCats.length === 0) {
-              const localCats = getCategories()
+              // Server is completely empty (new user). Push our local state up.
               saveAllCategoriesToFirestore(firebaseUser.uid, localCats)
-              setCategories(localCats)
-              saveCategories(localCats)
             } else {
+              // Server has data. Overwrite local state (handles multi-device sync & new logins).
               const { categories: resetCats, changed } = resetRecurringItems(firestoreCats)
               if (changed) saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
               setCategories(resetCats)
               saveCategories(resetCats)
+              scheduleDueNotifications(resetCats)
             }
-            if (isPinEnabled()) setLocked(true)
-            scheduleDueNotifications(firestoreCats)
-            setMounted(true)
           } else {
             // Skip snapshots that still have pending local writes — these are echoes of our
             // own optimistic updates and would overwrite the latest local state with a
             // potentially stale server view before the write is acknowledged.
             const hasPending = snap.docChanges().some(c => c.doc.metadata.hasPendingWrites)
             if (hasPending) return
-            // This snapshot is fully server-confirmed (no pending writes) — apply it.
-            // This handles: another device's changes, or our own writes after server ack.
+            
+            // Fully server-confirmed snapshot.
             setCategories(firestoreCats)
             saveCategories(firestoreCats)
           }
@@ -382,6 +388,7 @@ export default function TodoApp() {
         const reordered = arrayMove(sorted, oldIndex, newIndex)
         const updated = reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
         if (userRef.current) updated.forEach(cat => saveCategoryToFirestore(userRef.current!.uid, cat))
+        saveCategories(updated)
         return updated
       })
     }
@@ -406,6 +413,7 @@ export default function TodoApp() {
         if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
+      saveCategories(updated)
       return updated
     })
   }
@@ -430,9 +438,11 @@ export default function TodoApp() {
         saveCategoryToFirestore(userRef.current!.uid, updatedFrom)
         saveCategoryToFirestore(userRef.current!.uid, updatedTo)
       }
-      return prev.map(c =>
+      const updated = prev.map(c =>
         c.id === fromCategoryId ? updatedFrom : c.id === toCategoryId ? updatedTo : c
       )
+      saveCategories(updated)
+      return updated
     })
     toast(`Moved to ${categories.find(c => c.id === toCategoryId)?.name ?? "note"}`)
   }
@@ -445,7 +455,9 @@ export default function TodoApp() {
       const idOrder = new Map(reorderedItemIds.map((id, i) => [id, i]))
       const reordered = [...cat.items].sort((a, b) => (idOrder.get(a.id) ?? Infinity) - (idOrder.get(b.id) ?? Infinity))
       updatedCat = { ...cat, items: reordered }
-      return prev.map(c => c.id === categoryId ? updatedCat! : c)
+      const updated = prev.map(c => c.id === categoryId ? updatedCat! : c)
+      saveCategories(updated)
+      return updated
     })
     if (userRef.current && updatedCat) saveCategoryToFirestore(userRef.current.uid, updatedCat)
   }
@@ -461,9 +473,11 @@ export default function TodoApp() {
       if (movingItems.length === 0) return prev
       updatedFrom = { ...fromCat, items: fromCat.items.filter(i => !itemIds.includes(i.id)) }
       updatedTo = { ...toCat, items: [...toCat.items, ...movingItems] }
-      return prev.map(c =>
+      const updated = prev.map(c =>
         c.id === fromCategoryId ? updatedFrom! : c.id === toCategoryId ? updatedTo! : c
       )
+      saveCategories(updated)
+      return updated
     })
     if (userRef.current && updatedFrom && updatedTo) {
       saveCategoryToFirestore(userRef.current.uid, updatedFrom)
@@ -485,18 +499,27 @@ export default function TodoApp() {
         if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
+      saveCategories(updated)
       return updated
     })
     toast(`Imported ${newItems.length} item${newItems.length !== 1 ? "s" : ""}`)
   }
 
   const handleUpdateCategory = (updatedCategory: Category) => {
-    setCategories(prev => prev.map(cat => cat.id === updatedCategory.id ? updatedCategory : cat))
+    setCategories(prev => {
+      const updated = prev.map(cat => cat.id === updatedCategory.id ? updatedCategory : cat)
+      saveCategories(updated) // Sync save for immediate offline persistence
+      return updated
+    })
     if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCategory)
   }
 
   const handleAddCategory = (newCategory: Category) => {
-    setCategories(prev => [...prev, newCategory])
+    setCategories(prev => {
+      const updated = [...prev, newCategory]
+      saveCategories(updated)
+      return updated
+    })
     if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, newCategory)
   }
 
@@ -506,14 +529,22 @@ export default function TodoApp() {
     const deleted = cat.items.find(i => i.id === itemId)
     if (!deleted) return
     const updatedCat = { ...cat, items: cat.items.filter(i => i.id !== itemId) }
-    setCategories(prev => prev.map(c => c.id === categoryId ? updatedCat : c))
+    setCategories(prev => {
+      const updated = prev.map(c => c.id === categoryId ? updatedCat : c)
+      saveCategories(updated)
+      return updated
+    })
     if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
     toast("Item deleted", {
       action: {
         label: "Undo",
         onClick: () => {
           const restored = { ...updatedCat, items: [...updatedCat.items, deleted] }
-          setCategories(prev => prev.map(c => c.id === categoryId ? restored : c))
+          setCategories(prev => {
+            const updated = prev.map(c => c.id === categoryId ? restored : c)
+            saveCategories(updated)
+            return updated
+          })
           if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, restored)
         },
       },
@@ -523,14 +554,22 @@ export default function TodoApp() {
   const handleDeleteCategory = (categoryId: string) => {
     const deleted = categories.find(c => c.id === categoryId)
     if (!deleted) return
-    setCategories(prev => prev.filter(c => c.id !== categoryId))
+    setCategories(prev => {
+      const updated = prev.filter(c => c.id !== categoryId)
+      saveCategories(updated)
+      return updated
+    })
     if (userRef.current) deleteCategoryFromFirestore(userRef.current!.uid, categoryId)
     setCurrentView("categories")
     toast("Note deleted", {
       action: {
         label: "Undo",
         onClick: () => {
-          setCategories(prev => [...prev, deleted])
+          setCategories(prev => {
+            const updated = [...prev, deleted]
+            saveCategories(updated)
+            return updated
+          })
           if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, deleted)
         },
       },
@@ -551,6 +590,7 @@ export default function TodoApp() {
         if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
+      saveCategories(updated)
       return updated
     })
     toast("Item archived", {
@@ -569,6 +609,7 @@ export default function TodoApp() {
               if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, restoredCat)
               return restoredCat
             })
+            saveCategories(restored)
             return restored
           })
         },
@@ -590,6 +631,7 @@ export default function TodoApp() {
         if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
+      saveCategories(updated)
       return updated
     })
     toast("Item restored to Flagged")
@@ -660,6 +702,7 @@ export default function TodoApp() {
         if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
+      saveCategories(updated)
       return updated
     })
     toast("All completed items archived")
