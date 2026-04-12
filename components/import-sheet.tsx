@@ -502,7 +502,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
                   key={item.id}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 transition-colors",
-                    !item.selected && "opacity-40"
+                    !item.selected && !item.duplicate && "opacity-40"
                   )}
                 >
                   {/* Checkbox */}

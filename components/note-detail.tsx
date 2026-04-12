@@ -400,6 +400,21 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
               {todoRemaining === 0 ? "✓ Done" : `${todoRemaining} left`}
             </span>
           )}
+          {/* Select mode toggle — 44px tap target */}
+          {todoTotal > 0 && (
+            <button
+              onClick={() => {
+                if (selectMode) { exitSelectMode() } else { haptics.medium(); setSelectMode(true); setSelectedIds(new Set()); setAddMenuOpen(false) }
+              }}
+              className={cn(
+                "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
+                selectMode ? "text-primary bg-primary/10" : "text-muted-foreground/40 hover:text-foreground"
+              )}
+              aria-label={selectMode ? "Exit select mode" : "Select items"}
+            >
+              <CheckSquare className="w-4 h-4" />
+            </button>
+          )}
           {/* Delete note — 44px tap target */}
           <button
             onClick={handleDeleteNote}
