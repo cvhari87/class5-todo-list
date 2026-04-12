@@ -302,9 +302,31 @@ export default function TodoApp() {
               // Server is completely empty (new user). Push our local state up.
               saveAllCategoriesToFirestore(firebaseUser.uid, localCats)
             } else {
-              // Server has data. Overwrite local state (handles multi-device sync & new logins).
-              const { categories: resetCats, changed } = resetRecurringItems(firestoreCats)
-              if (changed) saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
+              // Server has data. Merge local unsynced offline writes into the server data
+              // to prevent losing items created right before the app was closed.
+              const mergedCats = firestoreCats.map(serverCat => {
+                const localCat = localCats.find(c => c.id === serverCat.id)
+                if (!localCat) return serverCat
+
+                // Find items that exist locally but are missing from the server
+                const missingLocalItems = localCat.items.filter(
+                  localItem => !serverCat.items.some(serverItem => serverItem.id === localItem.id)
+                )
+
+                if (missingLocalItems.length > 0) {
+                  return { ...serverCat, items: [...serverCat.items, ...missingLocalItems] }
+                }
+                return serverCat
+              })
+
+              const { categories: resetCats, changed } = resetRecurringItems(mergedCats)
+              
+              // If we merged anything or reset recurring items, push the update to Firestore
+              const hasMergedItems = mergedCats.some((cat, i) => cat.items.length !== firestoreCats[i].items.length)
+              if (changed || hasMergedItems) {
+                saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
+              }
+              
               setCategories(resetCats)
               saveCategories(resetCats)
               scheduleDueNotifications(resetCats)
