@@ -36,7 +36,7 @@ function similarity(a: string, b: string): number {
 export type DuplicateMatch = {
   matchedText: string
   categoryName: string
-  source: "fuzzy" | "semantic"
+  source: "fuzzy" | "semantic" | "intra-import"
 }
 
 const FUZZY_THRESHOLD = 0.82
@@ -44,19 +44,31 @@ const FUZZY_THRESHOLD = 0.82
 /**
  * Fuzzy + cross-category duplicate detection.
  * Returns a map of import text → best matching existing item.
+ * Also detects near-duplicates within the import batch itself.
+ *
+ * @param maxItems - cap on total existing items scanned (default: unlimited).
+ *   Pass a value (e.g. 500) for hot paths like inline item-add to bound cost.
  */
 export function findFuzzyDuplicates(
   importTexts: string[],
-  allCategories: Category[]
+  allCategories: Category[],
+  maxItems?: number
 ): Map<string, DuplicateMatch> {
   const result = new Map<string, DuplicateMatch>()
 
+  // ── Check against existing items in all categories ────────────────────────
   for (const text of importTexts) {
     let best: { score: number; match: DuplicateMatch } | null = null
+    let scanned = 0
 
+    outer:
     for (const cat of allCategories) {
       for (const item of cat.items) {
+        // Only compare against existing todos — headers/text are structural labels
+        // and are too short/generic to reliably fuzzy-match without false positives
         if (item.type !== "todo") continue
+        if (maxItems !== undefined && scanned >= maxItems) break outer
+        scanned++
         const score = similarity(text, item.text)
         if (score >= FUZZY_THRESHOLD) {
           if (!best || score > best.score) {
@@ -74,6 +86,26 @@ export function findFuzzyDuplicates(
     }
 
     if (best) result.set(text, best.match)
+  }
+
+  // ── Bug 1 fix: check for near-duplicates within the import batch itself ───
+  for (let i = 0; i < importTexts.length; i++) {
+    const text = importTexts[i]
+    // Skip if already flagged as a duplicate of an existing item
+    if (result.has(text)) continue
+
+    for (let j = 0; j < i; j++) {
+      const other = importTexts[j]
+      const score = similarity(text, other)
+      if (score >= FUZZY_THRESHOLD) {
+        result.set(text, {
+          matchedText: other,
+          categoryName: "(this import)",
+          source: "intra-import",
+        })
+        break
+      }
+    }
   }
 
   return result

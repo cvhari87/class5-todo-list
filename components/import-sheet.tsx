@@ -152,13 +152,9 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
       if (!currentUser) throw new Error("Not signed in")
       const idToken = await currentUser.getIdToken()
 
-      const existingItems = categories.flatMap(c =>
-        c.items.filter(i => i.type === "todo").map(i => ({ text: i.text, category: c.name }))
-      ).slice(0, 100)
-
       const body = imageBase64
-        ? { imageBase64, imageMimeType, existingCategories: categories.map(c => c.name), existingItems }
-        : { text: rawText, existingCategories: categories.map(c => c.name), existingItems }
+        ? { imageBase64, imageMimeType, existingCategories: categories.map(c => c.name) }
+        : { text: rawText, existingCategories: categories.map(c => c.name) }
 
       const res = await fetch("/api/categorize", {
         method: "POST",
@@ -177,16 +173,9 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
       const data = await res.json() as {
         suggestedCategory: string
         items: { text: string; type: ItemType; completed: boolean }[]
-        duplicates?: { importText: string; matchedText: string; category: string }[]
       }
 
-      // Build semantic duplicate lookup from AI response
-      const semanticDupes = new Map(
-        (data.duplicates ?? []).map(d => [d.importText, { matchedText: d.matchedText, categoryName: d.category, source: "semantic" as const }])
-      )
-
-      // Map AI response to ParsedImportItem[], then run fuzzy check client-side too
-      let _counter = 0
+      // Run fuzzy duplicate check client-side
       const rawParsed = data.items.filter(i => i.text?.trim()).map(i => i.text.trim())
       const fuzzyDupes = findFuzzyDuplicates(rawParsed, categories)
 
@@ -194,9 +183,9 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
         .filter(i => i.text?.trim())
         .map(i => {
           const text = i.text.trim()
-          const dupe = semanticDupes.get(text) ?? fuzzyDupes.get(text)
+          const dupe = fuzzyDupes.get(text)
           return {
-            id: `ai-${Date.now()}-${_counter++}`,
+            id: `ai-${crypto.randomUUID()}`,
             text,
             type: i.type ?? "todo",
             completed: i.completed ?? false,
@@ -483,7 +472,7 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
             <div className="flex items-center gap-3 flex-shrink-0">
               <div className="flex gap-2">
                 <button
-                  onClick={() => { haptics.light(); setItems(p => p.map(i => ({ ...i, selected: true }))) }}
+                  onClick={() => { haptics.light(); setItems(p => p.map(i => i.duplicate ? i : { ...i, selected: true })) }}
                   className="text-xs text-primary font-medium"
                 >All</button>
                 <span className="text-muted-foreground text-xs">·</span>
@@ -529,7 +518,11 @@ export function ImportSheet({ open, categories, onClose, onImport, onAddCategory
                     {item.duplicate && (
                       <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5 mt-0.5">
                         <AlertCircle className="w-2.5 h-2.5 flex-shrink-0" />
-                        {item.duplicate.source === "semantic" ? "Similar to" : "Possible duplicate of"} &ldquo;{item.duplicate.matchedText}&rdquo; in {item.duplicate.categoryName}
+                        {item.duplicate.source === "semantic"
+                          ? "Similar to"
+                          : item.duplicate.source === "intra-import"
+                          ? "Duplicate of another imported item:"
+                          : "Possible duplicate of"} &ldquo;{item.duplicate.matchedText}&rdquo;{item.duplicate.source !== "intra-import" && ` in ${item.duplicate.categoryName}`}
                       </span>
                     )}
                   </div>

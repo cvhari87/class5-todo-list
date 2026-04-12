@@ -9,7 +9,7 @@ export interface ParsedImportItem {
   duplicate?: {       // set if a similar item already exists
     matchedText: string
     categoryName: string
-    source: "fuzzy" | "semantic"
+    source: "fuzzy" | "semantic" | "intra-import"
   }
 }
 

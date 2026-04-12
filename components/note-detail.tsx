@@ -181,7 +181,7 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
     haptics.light()
     // Fuzzy + cross-category duplicate check
     if (addingType === "todo") {
-      const dupes = findFuzzyDuplicates([newItemText.trim()], allCategories)
+      const dupes = findFuzzyDuplicates([newItemText.trim()], allCategories, 500)
       const dupe = dupes.get(newItemText.trim())
       if (dupe) {
         toast.warning(`Similar to "${dupe.matchedText}" in ${dupe.categoryName}`, { duration: 3000 })
