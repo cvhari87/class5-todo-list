@@ -303,7 +303,7 @@ export default function TodoApp() {
             scheduleDueNotifications(firestoreCats)
             setMounted(true)
           } else {
-            // Subsequent snapshots: server confirmed our writes, or another device changed data
+            // Subsequent snapshots: our write was confirmed by server, or another device changed data
             setCategories(firestoreCats)
             saveCategories(firestoreCats)
           }
