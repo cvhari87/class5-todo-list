@@ -36,13 +36,16 @@ import { SettingsSheet } from "@/components/settings-sheet"
 import { scheduleDueNotifications } from "@/lib/notifications"
 import { cn } from "@/lib/utils"
 import { haptics } from "@/lib/haptics"
-import type { User } from "firebase/auth"
-import dynamic from "next/dynamic"
-
-// Lazy-loaded: these components statically import Firebase, so keeping them
-// dynamic removes the Firebase SDK (~180KB gzipped) from the initial bundle.
-const AuthScreen = dynamic(() => import("@/components/auth-screen").then(m => ({ default: m.AuthScreen })), { ssr: false })
-const ImportSheet = dynamic(() => import("@/components/import-sheet").then(m => ({ default: m.ImportSheet })), { ssr: false })
+import { auth } from "@/lib/firebase"
+import { onAuthStateChanged, signOut, User } from "firebase/auth"
+import {
+  saveCategoryToFirestore,
+  deleteCategoryFromFirestore,
+  saveAllCategoriesToFirestore,
+  subscribeToCategories,
+} from "@/lib/firestore"
+import { AuthScreen } from "@/components/auth-screen"
+import { ImportSheet } from "@/components/import-sheet"
 
 type View = "flagged" | "categories" | "archive" | "detail"
 
@@ -256,73 +259,65 @@ export default function TodoApp() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const firestoreUnsub = useRef<(() => void) | null>(null)
   const userRef = useRef<User | null>(null)
-  const fsRef = useRef<typeof import("@/lib/firestore") | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   )
 
-  // Auth state listener — Firebase is loaded lazily to keep it out of the initial bundle
+  // Auth state listener
   useEffect(() => {
-    let unsub: (() => void) | undefined
     let mounted = true
+    let isFirstSnapshot = true
 
-    Promise.all([
-      import("@/lib/firebase"),
-      import("firebase/auth"),
-      import("@/lib/firestore"),
-    ]).then(([firebaseModule, authModule, firestoreModule]) => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser: User | null) => {
       if (!mounted) return
-      fsRef.current = firestoreModule
-      const { auth } = firebaseModule
-      const { onAuthStateChanged } = authModule
-
-      unsub = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
-        if (!mounted) return
-        setUser(firebaseUser)
-        userRef.current = firebaseUser
-        setAuthChecked(true)
-
-        if (firebaseUser) {
-          const firestoreCats = await firestoreModule.loadCategoriesFromFirestore(firebaseUser.uid)
-          if (!mounted) return
-          if (firestoreCats.length === 0) {
-            const localCats = getCategories()
-            await firestoreModule.saveAllCategoriesToFirestore(firebaseUser.uid, localCats)
-            setCategories(localCats)
-            saveCategories(localCats)
-          } else {
-            const { categories: resetCats, changed } = resetRecurringItems(firestoreCats)
-            if (changed) {
-              await firestoreModule.saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
-            }
-            setCategories(resetCats)
-            saveCategories(resetCats)
-          }
-
-          if (isPinEnabled()) setLocked(true)
-          scheduleDueNotifications(firestoreCats)
-        } else {
-          if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
-          const cats = getCategories()
-          setCategories(cats)
-          scheduleDueNotifications(cats)
-        }
-
-        setMounted(true)
-      })
-    }).catch(() => {
-      if (!mounted) return
-      // Firebase failed to load — unblock the app so it doesn't hang on the loading screen
-      const cats = getCategories()
-      setCategories(cats)
-      scheduleDueNotifications(cats)
+      setUser(firebaseUser)
+      userRef.current = firebaseUser
       setAuthChecked(true)
-      setMounted(true)
+
+      if (firebaseUser) {
+        // Clean up any previous subscription before starting a new one
+        if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
+        isFirstSnapshot = true
+
+        // Real-time subscription — onSnapshot fires immediately with cached data
+        // (including any pending writes), so there is no stale-read overwrite race.
+        firestoreUnsub.current = subscribeToCategories(firebaseUser.uid, (firestoreCats) => {
+          if (!mounted) return
+
+          if (isFirstSnapshot) {
+            isFirstSnapshot = false
+            if (firestoreCats.length === 0) {
+              const localCats = getCategories()
+              saveAllCategoriesToFirestore(firebaseUser.uid, localCats)
+              setCategories(localCats)
+              saveCategories(localCats)
+            } else {
+              const { categories: resetCats, changed } = resetRecurringItems(firestoreCats)
+              if (changed) saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
+              setCategories(resetCats)
+              saveCategories(resetCats)
+            }
+            if (isPinEnabled()) setLocked(true)
+            scheduleDueNotifications(firestoreCats)
+            setMounted(true)
+          } else {
+            // Subsequent snapshots: server confirmed our writes, or another device changed data
+            setCategories(firestoreCats)
+            saveCategories(firestoreCats)
+          }
+        })
+      } else {
+        if (firestoreUnsub.current) { firestoreUnsub.current(); firestoreUnsub.current = null }
+        const cats = getCategories()
+        setCategories(cats)
+        scheduleDueNotifications(cats)
+        setMounted(true)
+      }
     })
 
-    return () => { mounted = false; unsub?.(); if (firestoreUnsub.current) firestoreUnsub.current() }
+    return () => { mounted = false; unsub(); if (firestoreUnsub.current) firestoreUnsub.current() }
   }, [])
 
   // Auto-lock when app goes to background
@@ -379,7 +374,7 @@ export default function TodoApp() {
         const newIndex = sorted.findIndex(c => c.id === over.id)
         const reordered = arrayMove(sorted, oldIndex, newIndex)
         const updated = reordered.map((cat, i) => ({ ...cat, priority: i + 1 }))
-        if (userRef.current) updated.forEach(cat => fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, cat))
+        if (userRef.current) updated.forEach(cat => saveCategoryToFirestore(userRef.current!.uid, cat))
         return updated
       })
     }
@@ -401,7 +396,7 @@ export default function TodoApp() {
             }
           }),
         }
-        if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCat)
+        if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
       return updated
@@ -425,8 +420,8 @@ export default function TodoApp() {
       const updatedFrom = { ...fromCat, items: fromCat.items.filter(i => i.id !== itemId) }
       const updatedTo = { ...toCat, items: [...toCat.items, item] }
       if (userRef.current) {
-        fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedFrom)
-        fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedTo)
+        saveCategoryToFirestore(userRef.current!.uid, updatedFrom)
+        saveCategoryToFirestore(userRef.current!.uid, updatedTo)
       }
       return prev.map(c =>
         c.id === fromCategoryId ? updatedFrom : c.id === toCategoryId ? updatedTo : c
@@ -445,7 +440,7 @@ export default function TodoApp() {
       updatedCat = { ...cat, items: reordered }
       return prev.map(c => c.id === categoryId ? updatedCat! : c)
     })
-    if (userRef.current && updatedCat) fsRef.current?.saveCategoryToFirestore(userRef.current.uid, updatedCat)
+    if (userRef.current && updatedCat) saveCategoryToFirestore(userRef.current.uid, updatedCat)
   }
 
   const handleBulkMoveItems = (fromCategoryId: string, itemIds: string[], toCategoryId: string) => {
@@ -464,8 +459,8 @@ export default function TodoApp() {
       )
     })
     if (userRef.current && updatedFrom && updatedTo) {
-      fsRef.current?.saveCategoryToFirestore(userRef.current.uid, updatedFrom)
-      fsRef.current?.saveCategoryToFirestore(userRef.current.uid, updatedTo)
+      saveCategoryToFirestore(userRef.current.uid, updatedFrom)
+      saveCategoryToFirestore(userRef.current.uid, updatedTo)
     }
   }
 
@@ -480,7 +475,7 @@ export default function TodoApp() {
       const updated = prev.map(cat => {
         if (cat.id !== categoryId) return cat
         const updatedCat = { ...cat, items: [...cat.items, ...newItems] }
-        if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCat)
+        if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
       return updated
@@ -490,12 +485,12 @@ export default function TodoApp() {
 
   const handleUpdateCategory = (updatedCategory: Category) => {
     setCategories(prev => prev.map(cat => cat.id === updatedCategory.id ? updatedCategory : cat))
-    if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCategory)
+    if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCategory)
   }
 
   const handleAddCategory = (newCategory: Category) => {
     setCategories(prev => [...prev, newCategory])
-    if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, newCategory)
+    if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, newCategory)
   }
 
   const handleDeleteItem = (categoryId: string, itemId: string) => {
@@ -505,14 +500,14 @@ export default function TodoApp() {
     if (!deleted) return
     const updatedCat = { ...cat, items: cat.items.filter(i => i.id !== itemId) }
     setCategories(prev => prev.map(c => c.id === categoryId ? updatedCat : c))
-    if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCat)
+    if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
     toast("Item deleted", {
       action: {
         label: "Undo",
         onClick: () => {
           const restored = { ...updatedCat, items: [...updatedCat.items, deleted] }
           setCategories(prev => prev.map(c => c.id === categoryId ? restored : c))
-          if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, restored)
+          if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, restored)
         },
       },
     })
@@ -522,14 +517,14 @@ export default function TodoApp() {
     const deleted = categories.find(c => c.id === categoryId)
     if (!deleted) return
     setCategories(prev => prev.filter(c => c.id !== categoryId))
-    if (userRef.current) fsRef.current?.deleteCategoryFromFirestore(userRef.current!.uid, categoryId)
+    if (userRef.current) deleteCategoryFromFirestore(userRef.current!.uid, categoryId)
     setCurrentView("categories")
     toast("Note deleted", {
       action: {
         label: "Undo",
         onClick: () => {
           setCategories(prev => [...prev, deleted])
-          if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, deleted)
+          if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, deleted)
         },
       },
     })
@@ -546,7 +541,7 @@ export default function TodoApp() {
             item.id === itemId ? { ...item, archived: true } : item
           ),
         }
-        if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCat)
+        if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
       return updated
@@ -564,7 +559,7 @@ export default function TodoApp() {
                   item.id === itemId ? { ...item, archived: false } : item
                 ),
               }
-              if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, restoredCat)
+              if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, restoredCat)
               return restoredCat
             })
             return restored
@@ -585,7 +580,7 @@ export default function TodoApp() {
             item.id === itemId ? { ...item, archived: false, completed: false } : item
           ),
         }
-        if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCat)
+        if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
       return updated
@@ -655,7 +650,7 @@ export default function TodoApp() {
               : item
           ),
         }
-        if (userRef.current) fsRef.current?.saveCategoryToFirestore(userRef.current!.uid, updatedCat)
+        if (userRef.current) saveCategoryToFirestore(userRef.current!.uid, updatedCat)
         return updatedCat
       })
       return updated
@@ -702,7 +697,7 @@ export default function TodoApp() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
         user={user}
-        onSignOut={async () => { const [{ signOut }, { auth }] = await Promise.all([import("firebase/auth"), import("@/lib/firebase")]); signOut(auth) }}
+        onSignOut={() => signOut(auth)}
         categories={categories}
       />
 
