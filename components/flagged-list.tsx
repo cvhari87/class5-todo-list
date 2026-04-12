@@ -93,7 +93,9 @@ interface SwipeableCompletedRowProps {
 }
 
 function SwipeableCompletedRow({ fi, onToggleComplete, onSelectItem, onArchiveItem, onDeleteItem }: SwipeableCompletedRowProps) {
-  const { item, category } = fi
+  const { item } = fi
+  // Defensive fallback: category may be undefined if data is stale (e.g. deleted category)
+  const category = fi.category ?? { id: "", name: "Other", color: "#8E8E93", items: [], priority: 0 }
   const [translateX, setTranslateX] = useState(0)
   const [swiped, setSwiped] = useState(false)
   const startXRef = useRef<number | null>(null)
@@ -214,7 +216,9 @@ interface SortableRowProps {
 
 function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragging, isOverlay, showRecurringIcon }: SortableRowProps) {
   const key = itemKey(fi)
-  const { item, category } = fi
+  const { item } = fi
+  // Defensive fallback: category may be undefined if data is stale (e.g. deleted category)
+  const category = fi.category ?? { id: "", name: "Other", color: "#8E8E93", items: [], priority: 0 }
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } = useSortable({ id: key })
 
@@ -257,10 +261,17 @@ function SortableRow({ fi, onToggleComplete, onSelectItem, onDeleteItem, isDragg
           </p>
           {!item.completed && <DueDateBadge dueDate={item.dueDate} />}
         </div>
-        {!item.completed && item.dueDate && getDueDateStatus(item.dueDate) === null && (
-          <div className="flex items-center gap-1 mt-0.5">
-            <CalendarDays className="w-3 h-3 text-muted-foreground/50" />
-            <span className="text-xs text-muted-foreground/60">{item.dueDate}</span>
+        {!showRecurringIcon && !item.completed && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: category.color }} />
+            <span className="text-xs text-muted-foreground">{category.name}</span>
+            {item.dueDate && getDueDateStatus(item.dueDate) === null && (
+              <>
+                <span className="text-muted-foreground/40 text-xs">·</span>
+                <CalendarDays className="w-3 h-3 text-muted-foreground/50" />
+                <span className="text-xs text-muted-foreground/60">{item.dueDate}</span>
+              </>
+            )}
           </div>
         )}
       </div>

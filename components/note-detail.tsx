@@ -45,10 +45,11 @@ interface NoteDetailProps {
   onUpdateCategory: (category: Category) => void
   onDeleteCategory: () => void
   onMoveItem: (itemId: string, targetCategoryId: string) => void
+  onBulkMoveItems: (itemIds: string[], targetCategoryId: string) => void
   scrollToItemId?: string
 }
 
-export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, onDeleteCategory, onMoveItem, scrollToItemId }: NoteDetailProps) {
+export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, onDeleteCategory, onMoveItem, onBulkMoveItems, scrollToItemId }: NoteDetailProps) {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [addingType, setAddingType] = useState<ItemType | null>(null)
   const [newItemText, setNewItemText] = useState("")
@@ -67,6 +68,7 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
   // ── Bulk selection state ──────────────────────────────────────────────────
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showBulkMoveSheet, setShowBulkMoveSheet] = useState(false)
 
   const enterSelectMode = (itemId: string) => {
     haptics.medium()
@@ -122,6 +124,16 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
       ...category,
       items: category.items.filter(item => !selectedIds.has(item.id)),
     })
+    exitSelectMode()
+  }
+
+  const handleBulkMove = (targetCategoryId: string) => {
+    haptics.success()
+    const ids = Array.from(selectedIds)
+    onBulkMoveItems(ids, targetCategoryId)
+    const targetName = allCategories.find(c => c.id === targetCategoryId)?.name ?? "note"
+    toast(`Moved ${ids.length} item${ids.length !== 1 ? "s" : ""} to ${targetName}`)
+    setShowBulkMoveSheet(false)
     exitSelectMode()
   }
 
@@ -596,6 +608,15 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
                   Flag
                 </button>
                 <button
+                  onClick={() => { haptics.light(); setShowBulkMoveSheet(true) }}
+                  disabled={selectedIds.size === 0}
+                  className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
+                  title="Move selected to another note"
+                >
+                  <FolderInput className="w-4 h-4" />
+                  Move
+                </button>
+                <button
                   onClick={handleBulkDelete}
                   disabled={selectedIds.size === 0}
                   className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs bg-destructive/10 text-destructive hover:bg-destructive/20 disabled:opacity-40 transition-colors"
@@ -709,6 +730,48 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
                     <div className="w-4 h-4 rounded-md" style={{ backgroundColor: cat.color }} />
                   </div>
                   <span className="font-medium">{cat.name}</span>
+                </button>
+              ))}
+            {allCategories.filter(c => c.id !== category.id).length === 0 && (
+              <p className="px-5 py-4 text-sm text-muted-foreground">No other notes to move to.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Move Sheet ── */}
+      {showBulkMoveSheet && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={() => setShowBulkMoveSheet(false)}
+          />
+          <div
+            className="relative bg-card rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-200"
+            style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+          >
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-5 pb-3">
+              Move {selectedIds.size} item{selectedIds.size !== 1 ? "s" : ""} to note
+            </p>
+            {allCategories
+              .filter(c => c.id !== category.id)
+              .sort((a, b) => a.priority - b.priority)
+              .map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => handleBulkMove(cat.id)}
+                  className="flex items-center gap-3 w-full px-5 py-4 text-base transition-colors active:bg-secondary border-b border-border last:border-0 text-left"
+                >
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cat.color + "20" }}>
+                    <div className="w-4 h-4 rounded-md" style={{ backgroundColor: cat.color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">{cat.name}</span>
+                    <span className="text-xs text-muted-foreground ml-2">{cat.items.length} item{cat.items.length !== 1 ? "s" : ""}</span>
+                  </div>
                 </button>
               ))}
             {allCategories.filter(c => c.id !== category.id).length === 0 && (
