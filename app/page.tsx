@@ -308,28 +308,26 @@ export default function TodoApp() {
                 const localCat = localCats.find(c => c.id === serverCat.id)
                 if (!localCat) return serverCat
 
-                // Find items that exist locally but are missing from the server
-                const missingLocalItems = localCat.items.filter(
-                  localItem => !serverCat.items.some(serverItem => serverItem.id === localItem.id)
+                // Use local items as the base — they reflect the most recent user actions
+                // (completed state, flagged, text edits) even if the Firestore write didn't
+                // finish before the app was closed. Only add items that exist on the server
+                // but not locally (e.g. added from another session).
+                const serverOnlyItems = serverCat.items.filter(
+                  serverItem => !localCat.items.some(localItem => localItem.id === serverItem.id)
                 )
 
-                if (missingLocalItems.length > 0) {
-                  return { ...serverCat, items: [...serverCat.items, ...missingLocalItems] }
-                }
-                return serverCat
+                return { ...serverCat, items: [...localCat.items, ...serverOnlyItems] }
               })
 
               // Preserve categories that exist locally but haven't synced to server yet
               const localOnlyCats = localCats.filter(c => !firestoreCats.some(s => s.id === c.id))
               const finalMerged = [...mergedCats, ...localOnlyCats]
 
-              const { categories: resetCats, changed } = resetRecurringItems(finalMerged)
+              const { categories: resetCats } = resetRecurringItems(finalMerged)
 
-              // If we merged anything or reset recurring items, push the update to Firestore
-              const hasMergedItems = finalMerged.some((cat, i) => cat.items.length !== (firestoreCats[i]?.items.length ?? -1))
-              if (changed || hasMergedItems || localOnlyCats.length > 0) {
-                saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
-              }
+              // Always push merged state to Firestore — ensures server reflects the latest
+              // local state even when item state (completed, flagged, etc.) diverged
+              saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
 
               setCategories(resetCats)
               saveCategories(resetCats)
@@ -339,9 +337,9 @@ export default function TodoApp() {
             // Skip snapshots that still have pending local writes — these are echoes of our
             // own optimistic updates and would overwrite the latest local state with a
             // potentially stale server view before the write is acknowledged.
-            const hasPending = snap.docs.some(d => d.metadata.hasPendingWrites)
+            const hasPending = snap.docChanges().some(c => c.doc.metadata.hasPendingWrites)
             if (hasPending) return
-            
+
             // Fully server-confirmed snapshot.
             setCategories(firestoreCats)
             saveCategories(firestoreCats)

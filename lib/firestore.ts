@@ -33,7 +33,9 @@ export async function loadCategoriesFromFirestore(uid: string): Promise<Category
 /** Save a single category (upsert) */
 export async function saveCategoryToFirestore(uid: string, category: Category): Promise<void> {
   const ref = doc(db, "users", uid, "categories", category.id)
-  await setDoc(ref, category)
+  // Firestore rejects undefined values — strip them via JSON round-trip before writing
+  const clean = JSON.parse(JSON.stringify(category))
+  await setDoc(ref, clean)
 }
 
 /** Save all categories (used for bulk sync / migration) */
