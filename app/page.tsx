@@ -319,14 +319,18 @@ export default function TodoApp() {
                 return serverCat
               })
 
-              const { categories: resetCats, changed } = resetRecurringItems(mergedCats)
-              
+              // Preserve categories that exist locally but haven't synced to server yet
+              const localOnlyCats = localCats.filter(c => !firestoreCats.some(s => s.id === c.id))
+              const finalMerged = [...mergedCats, ...localOnlyCats]
+
+              const { categories: resetCats, changed } = resetRecurringItems(finalMerged)
+
               // If we merged anything or reset recurring items, push the update to Firestore
-              const hasMergedItems = mergedCats.some((cat, i) => cat.items.length !== firestoreCats[i].items.length)
-              if (changed || hasMergedItems) {
+              const hasMergedItems = finalMerged.some((cat, i) => cat.items.length !== (firestoreCats[i]?.items.length ?? -1))
+              if (changed || hasMergedItems || localOnlyCats.length > 0) {
                 saveAllCategoriesToFirestore(firebaseUser.uid, resetCats)
               }
-              
+
               setCategories(resetCats)
               saveCategories(resetCats)
               scheduleDueNotifications(resetCats)
@@ -335,7 +339,7 @@ export default function TodoApp() {
             // Skip snapshots that still have pending local writes — these are echoes of our
             // own optimistic updates and would overwrite the latest local state with a
             // potentially stale server view before the write is acknowledged.
-            const hasPending = snap.docChanges().some(c => c.doc.metadata.hasPendingWrites)
+            const hasPending = snap.docs.some(d => d.metadata.hasPendingWrites)
             if (hasPending) return
             
             // Fully server-confirmed snapshot.
@@ -783,6 +787,7 @@ export default function TodoApp() {
             onDeleteCategory={() => handleDeleteCategory(selectedCategory.id)}
             onMoveItem={(itemId, toCategoryId) => handleMoveItem(selectedCategory.id, itemId, toCategoryId)}
             onBulkMoveItems={(itemIds, toCategoryId) => handleBulkMoveItems(selectedCategory.id, itemIds, toCategoryId)}
+            onArchiveItem={(itemId) => handleArchiveItem(selectedCategory.id, itemId)}
             scrollToItemId={scrollToItemId ?? undefined}
           />
         ) : (

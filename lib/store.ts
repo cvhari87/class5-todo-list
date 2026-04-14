@@ -79,12 +79,12 @@ export function resetRecurringItems(categories: Category[]): { categories: Categ
 export function getCategories(): Category[] {
   if (typeof window === "undefined") return defaultCategories
 
-  // Check version - if outdated, clear and use fresh defaults
+  // Check version - if outdated, bump the version but keep existing data.
+  // Field migrations are handled below via spreads (e.g. type: item.type || "todo").
   const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY)
   if (!storedVersion || parseInt(storedVersion) < CURRENT_VERSION) {
-    localStorage.removeItem(STORAGE_KEY)
     localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION.toString())
-    return defaultCategories
+    // Fall through to read and migrate stored data rather than wiping it.
   }
 
   const stored = localStorage.getItem(STORAGE_KEY)

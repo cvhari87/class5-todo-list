@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput, Pencil, CheckCheck, Square, Share2, ListTodo, Sparkles } from "lucide-react"
+import { ArrowLeft, Plus, Flag, Trash2, GripVertical, Heading, AlignLeft, CheckSquare, ArrowUpDown, RefreshCw, CalendarDays, X, ExternalLink, FolderInput, Pencil, CheckCheck, Square, Share2, ListTodo, Sparkles, Archive } from "lucide-react"
 import { toast } from "sonner"
 import {
   DndContext,
@@ -46,10 +46,11 @@ interface NoteDetailProps {
   onDeleteCategory: () => void
   onMoveItem: (itemId: string, targetCategoryId: string) => void
   onBulkMoveItems: (itemIds: string[], targetCategoryId: string) => void
+  onArchiveItem: (itemId: string) => void
   scrollToItemId?: string
 }
 
-export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, onDeleteCategory, onMoveItem, onBulkMoveItems, scrollToItemId }: NoteDetailProps) {
+export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, onDeleteCategory, onMoveItem, onBulkMoveItems, onArchiveItem, scrollToItemId }: NoteDetailProps) {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [addingType, setAddingType] = useState<ItemType | null>(null)
   const [newItemText, setNewItemText] = useState("")
@@ -123,6 +124,19 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
     onUpdateCategory({
       ...category,
       items: category.items.filter(item => !selectedIds.has(item.id)),
+    })
+    exitSelectMode()
+  }
+
+  const handleBulkArchive = () => {
+    haptics.success()
+    const ids = Array.from(selectedIds)
+    // Archive each selected completed todo item
+    ids.forEach(id => {
+      const item = category.items.find(i => i.id === id)
+      if (item && item.type === "todo" && item.completed) {
+        onArchiveItem(id)
+      }
     })
     exitSelectMode()
   }
@@ -461,6 +475,7 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
               onUpdateText={handleUpdateText}
               onUpdateDueDate={handleUpdateDueDate}
               onMove={(id) => { haptics.light(); setMovingItemId(id) }}
+              onArchive={(id) => { haptics.medium(); onArchiveItem(id) }}
               selectMode={selectMode}
               selectedIds={selectedIds}
               onLongPress={enterSelectMode}
@@ -489,6 +504,7 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
                   onDelete={() => handleDeleteItem(item.id)}
                   onUpdateText={(text) => handleUpdateText(item.id, text)}
                   onUpdateDueDate={(date) => handleUpdateDueDate(item.id, date)}
+                  onArchive={() => { haptics.medium(); onArchiveItem(item.id) }}
                   selectMode={selectMode}
                   isSelected={selectedIds.has(item.id)}
                   onLongPress={() => enterSelectMode(item.id)}
@@ -615,6 +631,15 @@ export function NoteDetail({ category, allCategories, onBack, onUpdateCategory, 
                 >
                   <FolderInput className="w-4 h-4" />
                   Move
+                </button>
+                <button
+                  onClick={handleBulkArchive}
+                  disabled={selectedIds.size === 0 || !Array.from(selectedIds).some(id => { const item = category.items.find(i => i.id === id); return item?.type === "todo" && item.completed })}
+                  className="flex items-center gap-1 h-9 px-3 rounded-xl text-xs bg-accent/20 text-accent-foreground hover:bg-accent/30 disabled:opacity-40 transition-colors"
+                  title="Archive selected completed items"
+                >
+                  <Archive className="w-4 h-4" />
+                  Archive
                 </button>
                 <button
                   onClick={handleBulkDelete}
@@ -839,6 +864,7 @@ interface SortableItemListProps {
   onUpdateText: (id: string, text: string) => void
   onUpdateDueDate: (id: string, date: string) => void
   onMove: (id: string) => void
+  onArchive: (id: string) => void
   selectMode: boolean
   selectedIds: Set<string>
   onLongPress: (id: string) => void
@@ -849,7 +875,7 @@ function SortableItemList({
   items, categoryColor, activeDragId, highlightedItemId, allItems, sensors,
   onDragStart, onDragEnd,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
-  onUpdateText, onUpdateDueDate, onMove,
+  onUpdateText, onUpdateDueDate, onMove, onArchive,
   selectMode, selectedIds, onLongPress, onToggleSelect,
 }: SortableItemListProps) {
   return (
@@ -875,6 +901,7 @@ function SortableItemList({
             onUpdateText={(text) => onUpdateText(item.id, text)}
             onUpdateDueDate={(date) => onUpdateDueDate(item.id, date)}
             onMove={item.type === "todo" ? () => onMove(item.id) : undefined}
+            onArchive={item.type === "todo" && item.completed ? () => onArchive(item.id) : undefined}
             selectMode={selectMode}
             isSelected={selectedIds.has(item.id)}
             onLongPress={() => onLongPress(item.id)}
@@ -921,6 +948,7 @@ interface NoteItemRowProps {
   onUpdateText: (text: string) => void
   onUpdateDueDate: (date: string) => void
   onMove?: () => void
+  onArchive?: () => void
   selectMode?: boolean
   isSelected?: boolean
   onLongPress?: () => void
@@ -930,7 +958,7 @@ interface NoteItemRowProps {
 function NoteItemRow({
   item, categoryColor, sortable = false, isOverlay, highlighted,
   onToggleComplete, onToggleFlag, onToggleRecurring, onDelete,
-  onUpdateText, onUpdateDueDate, onMove,
+  onUpdateText, onUpdateDueDate, onMove, onArchive,
   selectMode = false, isSelected = false, onLongPress, onToggleSelect,
 }: NoteItemRowProps) {
   const {
@@ -1332,6 +1360,16 @@ function NoteItemRow({
                   aria-label={item.flagged ? "Unflag" : "Flag"}
                 >
                   <Flag className={cn("w-4 h-4", item.flagged && "fill-current")} />
+                </button>
+              )}
+              {/* Archive — 44px, only for completed items */}
+              {onArchive && item.completed && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onArchive() }}
+                  className="flex items-center justify-center w-11 h-11 rounded-full transition-colors text-muted-foreground/30 active:bg-accent/20 active:text-accent-foreground hover:text-muted-foreground"
+                  aria-label="Archive item"
+                >
+                  <Archive className="w-4 h-4" />
                 </button>
               )}
               {/* Move to category — 44px */}
