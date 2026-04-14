@@ -337,7 +337,7 @@ export default function TodoApp() {
             // Skip snapshots that still have pending local writes — these are echoes of our
             // own optimistic updates and would overwrite the latest local state with a
             // potentially stale server view before the write is acknowledged.
-            const hasPending = snap.docChanges().some(c => c.doc.metadata.hasPendingWrites)
+            const hasPending = snap.docs.some(d => d.metadata.hasPendingWrites)
             if (hasPending) return
 
             // Fully server-confirmed snapshot.
